@@ -1,0 +1,30 @@
+name: BridgeDNS CI
+on: [workflow_dispatch, push]
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.0'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.0.13004108'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Native libraries
+        run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108" bash scripts/build-native.sh
+      - run: python3 scripts/verify-native.py
+      - run: cd vendor/MasterDnsVPN && go test -race ./internal/client -run '^TestNava'
+      - run: gradle testDebugUnitTest lintDebug assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BridgeDNS-debug
+          path: app/build/outputs/apk/debug/*.apk

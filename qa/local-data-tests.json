@@ -1,0 +1,9 @@
+{
+  "cli_round_trip_bytes": 16384,
+  "embedded_normal_round_trip_bytes": 65536,
+  "embedded_compatibility_round_trip_bytes": 65536,
+  "comparison": "byte-for-byte random payload echo",
+  "network": "localhost DNS listener and mock upstream SOCKS",
+  "android_device_test": false,
+  "user_server_test": false
+}

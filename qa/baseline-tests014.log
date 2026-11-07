@@ -1,0 +1,9 @@
+--- FAIL: TestDialUDPResolverUsesProtectServer (0.00s)
+    protected_socket_unix_test.go:62: Listen unix failed: listen unix /tmp/mdv-client-protect-319-1793221507478454306.sock: socket: operation not permitted
+--- FAIL: TestListenUDPProtectedUsesProtectServer (0.00s)
+    protected_socket_unix_test.go:74: Listen unix failed: listen unix /tmp/mdv-client-protect-319-1793221507478832721.sock: socket: operation not permitted
+--- FAIL: TestListenUDPProtectedFailsOnProtectFailure (0.00s)
+    protected_socket_unix_test.go:86: Listen unix failed: listen unix /tmp/mdv-client-protect-319-1793221507478925280.sock: socket: operation not permitted
+FAIL
+FAIL	masterdnsvpn-go/internal/client	0.012s
+FAIL

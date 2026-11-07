@@ -1,0 +1,26 @@
+{
+  "pass": true,
+  "proxy_started_before_scan_completed": true,
+  "initial_metrics": [
+    0,
+    0,
+    3815,
+    5184,
+    2,
+    9,
+    2,
+    1
+  ],
+  "final_metrics": [
+    65536,
+    65536,
+    279328,
+    451745,
+    3,
+    9,
+    9,
+    0
+  ],
+  "round_trip_bytes": 65536,
+  "elapsed_seconds": 1.71
+}

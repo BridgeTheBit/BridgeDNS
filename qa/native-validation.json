@@ -1,0 +1,12 @@
+{
+  "version": "0.1.3",
+  "abis": [
+    "arm64-v8a",
+    "armeabi-v7a",
+    "x86_64"
+  ],
+  "NavaSnapshot_exported": true,
+  "JNI_metrics_exported": true,
+  "sample_JNI_OnLoad_absent": true,
+  "elf_16kb_alignment": true
+}

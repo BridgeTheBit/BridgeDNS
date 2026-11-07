@@ -1,0 +1,30 @@
+2026/10/28 16:04:23 [TestLogger] [WARN] 🚨 RX queue overloaded | Dropped: 1 | Remote: 8.8.8.8:53 | Queue: 0/1024
+2026/10/28 16:04:23 [TestLogger] [WARN] 🔄 Session restart requested: test reason
+2026/10/28 16:04:23 [TestLogger] [DEBUG] 🛑 Stopping Async Runtime...
+2026/10/28 16:04:23 [TestLogger] [DEBUG] 🈲 Async Runtime stopped cleanly.
+2026/10/28 16:04:24 [TestLogger] [INFO] 📡 Async Runtime Initialized: 1 RX/TX Workers, 1 Processors
+2026/10/28 16:04:24 [TestLogger] [INFO] 🚀  Proxy server is listening on 127.0.0.1:39943
+2026/10/28 16:04:24 [TestLogger] [INFO] 🚀  Proxy server is listening on [::1]:40707
+2026/10/28 16:04:24 [TestLogger] [DEBUG] 🛑 Stopping Async Runtime...
+2026/10/28 16:04:24 [TestLogger] [DEBUG] 👂 Reader Worker #0 started
+2026/10/28 16:04:24 [TestLogger] [DEBUG] 🚀 Writer Worker #0 started
+2026/10/28 16:04:24 [TestLogger] [DEBUG] Stream Dispatcher started
+2026/10/28 16:04:24 [TestLogger] [DEBUG] 🏗  Processor Worker #0 started
+2026/10/28 16:04:24 [TestLogger] [DEBUG] 🧩 Planner/Encoder Worker #0 started
+2026/10/28 16:04:24 [TestLogger] [DEBUG] 🈲 Async Runtime stopped cleanly.
+2026/10/28 16:04:24 [TestLogger] [INFO] 📡 Async Runtime Initialized: 1 RX/TX Workers, 1 Processors
+2026/10/28 16:04:24 [TestLogger] [ERROR] ❌ Failed to start  proxy: invalid listener address
+--- FAIL: TestBalancerLossThenLatencyRoundRobinsAcrossNearTopCandidates (0.00s)
+    balancer_test.go:233: expected round-robin across near-top candidates, seen=map[b:true]
+2026/10/28 16:04:24 [TestLogger] [DEBUG] Stream Dispatcher started
+2026/10/28 16:04:24 [TestLogger] [DEBUG] Stream Dispatcher started
+--- FAIL: TestDialUDPResolverUsesProtectServer (0.00s)
+    protected_socket_unix_test.go:62: Listen unix failed: listen unix /tmp/mdv-client-protect-125-1793221464745634715.sock: socket: operation not permitted
+--- FAIL: TestListenUDPProtectedUsesProtectServer (0.00s)
+    protected_socket_unix_test.go:74: Listen unix failed: listen unix /tmp/mdv-client-protect-125-1793221464745694585.sock: socket: operation not permitted
+--- FAIL: TestListenUDPProtectedFailsOnProtectFailure (0.00s)
+    protected_socket_unix_test.go:86: Listen unix failed: listen unix /tmp/mdv-client-protect-125-1793221464745714018.sock: socket: operation not permitted
+FAIL
+FAIL	masterdnsvpn-go/internal/client	1.432s
+ok  	masterdnsvpn-go/internal/config	0.028s
+FAIL
