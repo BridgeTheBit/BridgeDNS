@@ -17,7 +17,7 @@ OUT="$ROOT/app/build/sdk"; mkdir -p "$OUT/classes" "$OUT/gen" "$OUT/dex"
 for abi in $ABIS; do
     for lib in masterdns hev-socks5-tunnel bridgedns; do test -f "$ROOT/app/src/main/jniLibs/$abi/lib$lib.so"; done
 done
-python3 "$ROOT/scripts/verify-native.py"
+python3 "$ROOT/scripts/verify-native.py" $ABIS
 "$SDK/aapt2" compile --dir "$ROOT/app/src/main/res" -o "$OUT/resources.zip"
 python3 - "$ROOT/app/src/main/AndroidManifest.xml" "$OUT/AndroidManifest.xml" <<'PY'
 import sys,xml.etree.ElementTree as ET

@@ -4,7 +4,8 @@ from pathlib import Path
 import re, subprocess, sys
 
 root=Path(__file__).resolve().parent.parent
-for abi in ('arm64-v8a','armeabi-v7a','x86_64'):
+abis=tuple(sys.argv[1:]) or ('arm64-v8a','armeabi-v7a','x86_64')
+for abi in abis:
     folder=root/'app/src/main/jniLibs'/abi
     for name,required in {
         'libmasterdns.so':('NavaRun','NavaStop','NavaSnapshot','NavaResolvers'),
