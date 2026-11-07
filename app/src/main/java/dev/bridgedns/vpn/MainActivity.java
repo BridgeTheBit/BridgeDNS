@@ -70,7 +70,7 @@ public final class MainActivity extends Activity {
     @Override public void onDestroy(){worker.shutdownNow();probeWorker.shutdownNow();super.onDestroy();}
     void build(){
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(BG);scroll.setFillViewport(true);
-        root=new LinearLayout(this);root.setOrientation(1);root.setPadding(dp(24),dp(16),dp(24),dp(28));root.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(24),dp(16),dp(24),dp(28));root.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         scroll.addView(root);setContentView(scroll);
         scroll.setOnApplyWindowInsetsListener((v,insets)->{root.setPadding(dp(24),dp(16)+insets.getSystemWindowInsetTop(),dp(24),dp(24)+insets.getSystemWindowInsetBottom());return insets.consumeSystemWindowInsets();});
         LinearLayout header=row();TextView brand=text("BridgeDNS",29,TEXT);brand.setTypeface(null,1);brand.setLetterSpacing(.18f);
@@ -209,7 +209,7 @@ public final class MainActivity extends Activity {
     void editProfile(boolean adding){editProfile(adding,adding?new Profile():profile);}
     void editProfile(boolean adding,Profile seed){
         final Profile draft;try{draft=Profile.parse(seed.json());}catch(Exception e){toast("Could not open profile");return;}
-        LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.setPadding(dp(24),dp(8),dp(24),dp(8));box.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(24),dp(8),dp(24),dp(8));box.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         EditText name=field(box,"Profile name",draft.name,false),domain=field(box,"Delegated tunnel domain",draft.domain,false),key=field(box,"Server key",draft.key,true);
         box.addView(text("Encryption • Must match the server",12,MUTED));Spinner method=new Spinner(this);method.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"0 • None","1 • XOR","2 • ChaCha20","3 • AES-128-GCM","4 • AES-192-GCM","5 • AES-256-GCM"}));method.setSelection(Math.max(0,Math.min(5,draft.encryption)));box.addView(method);
         EditText resolvers=field(box,"Resolvers • IP or IP:port, one per line (default port 53)",draft.resolvers,false);resolvers.setSingleLine(false);resolvers.setMinLines(3);resolvers.setMaxLines(6);resolvers.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -272,12 +272,12 @@ public final class MainActivity extends Activity {
     void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
     int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
     TextView text(String s,int size,int color){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);t.setPadding(0,dp(3),0,dp(3));return t;}
-    LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(0);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
-    LinearLayout card(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);l.setPadding(dp(18),dp(14),dp(18),dp(14));l.setBackground(bg(CARD,22));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(12);l.setLayoutParams(p);return l;}
+    LinearLayout row(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.HORIZONTAL);l.setGravity(Gravity.CENTER_VERTICAL);return l;}
+    LinearLayout card(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(18),dp(14),dp(18),dp(14));l.setBackground(bg(CARD,22));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(12);l.setLayoutParams(p);return l;}
     GradientDrawable bg(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     Button button(String s,int fill,int color){Button b=new Button(this);b.setText(s);b.setTextSize(15);b.setTextColor(color);b.setAllCaps(false);b.setBackground(bg(fill,18));b.setStateListAnimator(null);return b;}
     TextView metric(LinearLayout parent,String title){
-        LinearLayout column=new LinearLayout(this);column.setOrientation(1);column.setGravity(Gravity.CENTER);column.setPadding(dp(2),0,dp(2),0);
+        LinearLayout column=new LinearLayout(this);column.setOrientation(LinearLayout.VERTICAL);column.setGravity(Gravity.CENTER);column.setPadding(dp(2),0,dp(2),0);
         TextView value=text("—",17,TEXT);value.setTypeface(Typeface.MONOSPACE);value.setGravity(Gravity.CENTER);value.setSingleLine(true);value.setAutoSizeTextTypeUniformWithConfiguration(12,17,1,android.util.TypedValue.COMPLEX_UNIT_SP);column.addView(value,new LinearLayout.LayoutParams(-1,dp(32)));
         TextView label=text(title,11,MUTED);label.setGravity(Gravity.CENTER);label.setSingleLine(true);column.addView(label,new LinearLayout.LayoutParams(-1,dp(26)));
         TextView volume=text("TCP 0 B",12,MINT);volume.setGravity(Gravity.CENTER);volume.setSingleLine(true);volume.setAutoSizeTextTypeUniformWithConfiguration(10,12,1,android.util.TypedValue.COMPLEX_UNIT_SP);column.addView(volume,new LinearLayout.LayoutParams(-1,dp(25)));
