@@ -1,5 +1,6 @@
 package dev.bridgedns.vpn;
 
+import android.annotation.SuppressLint;
 import android.app.*;
 import android.content.*;
 import android.graphics.Typeface;
@@ -51,6 +52,7 @@ public final class ResolverActivity extends Activity {
                 box.addView(text("Runtime totals  ↓ "+MainActivity.format(r.down)+"    ↑ "+MainActivity.format(r.up),11,MUTED));return box;}};
         list.setAdapter(adapter);root.addView(list,new LinearLayout.LayoutParams(-1,0,1));load();
     }
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override public void onStart(){super.onStart();IntentFilter f=new IntentFilter(TunnelService.RESOLVERS_STATE);f.addAction(TunnelService.STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(receiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiver,f);handler.post(poll);}
     @Override public void onStop(){handler.removeCallbacks(poll);unregisterReceiver(receiver);super.onStop();}
     @Override public void onDestroy(){destroyed=true;stopTest();worker.shutdownNow();super.onDestroy();}

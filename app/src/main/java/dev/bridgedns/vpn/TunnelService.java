@@ -1,5 +1,6 @@
 package dev.bridgedns.vpn;
 
+import android.annotation.SuppressLint;
 import android.app.*;
 import android.content.*;
 import android.net.*;
@@ -25,6 +26,7 @@ public final class TunnelService extends VpnService {
     long started;
     boolean launched=false;
     final BroadcastReceiver control=new BroadcastReceiver(){ public void onReceive(Context c,Intent i){ if(STOP.equals(i.getAction())) shutdown(); else if(RESOLVERS_QUERY.equals(i.getAction())) publishResolvers(); else publish(); }};
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override public void onCreate(){
         super.onCreate(); IntentFilter f=new IntentFilter(STOP); f.addAction(QUERY);f.addAction(RESOLVERS_QUERY);
         if(Build.VERSION.SDK_INT>=33) registerReceiver(control,f,Context.RECEIVER_NOT_EXPORTED); else registerReceiver(control,f);

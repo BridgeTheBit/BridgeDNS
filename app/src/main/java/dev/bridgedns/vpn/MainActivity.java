@@ -1,5 +1,6 @@
 package dev.bridgedns.vpn;
 
+import android.annotation.SuppressLint;
 import android.Manifest;
 import android.app.*;
 import android.content.*;
@@ -65,6 +66,7 @@ public final class MainActivity extends Activity {
         build();
         if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},8);
     }
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override public void onStart(){super.onStart();IntentFilter f=new IntentFilter(TunnelService.STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(receiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiver,f);sendBroadcast(new Intent(TunnelService.QUERY).setPackage(getPackageName()));}
     @Override public void onStop(){super.onStop();unregisterReceiver(receiver);}
     @Override public void onDestroy(){worker.shutdownNow();probeWorker.shutdownNow();super.onDestroy();}
