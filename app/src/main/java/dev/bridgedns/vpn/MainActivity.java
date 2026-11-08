@@ -99,7 +99,7 @@ public final class MainActivity extends Activity {
         scroll.addView(root);setContentView(scroll);
         scroll.setOnApplyWindowInsetsListener((v,insets)->{root.setPadding(dp(24),dp(16)+insets.getSystemWindowInsetTop(),dp(24),dp(24)+insets.getSystemWindowInsetBottom());return insets.consumeSystemWindowInsets();});
         LinearLayout header=row();TextView brand=text("BridgeDNS",29,TEXT);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.18f);
-        TextView beta=text(BuildConfig.VERSION_NAME,11,MINT);beta.setPadding(dp(12),dp(7),dp(12),dp(7));beta.setBackground(bg(0xff163c37,30));header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));header.addView(beta);root.addView(header);
+        TextView beta=text(appVersion(),11,MINT);beta.setPadding(dp(12),dp(7),dp(12),dp(7));beta.setBackground(bg(0xff163c37,30));header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));header.addView(beta);root.addView(header);
         TextView sub=text("Find another way through.",14,MUTED);sub.setPadding(0,dp(9),0,dp(12));root.addView(sub);
         orbit=new Orbit();orbit.setOnClickListener(v->toggle());root.addView(orbit,new LinearLayout.LayoutParams(-1,dp(230)));
         state=text(status,19,TEXT);state.setGravity(Gravity.CENTER);state.setTypeface(null,Typeface.BOLD);root.addView(state);
@@ -189,7 +189,7 @@ public final class MainActivity extends Activity {
     }
     void addHeader(){
         LinearLayout header=row();LinearLayout brand=row();TextView title=text("BridgeDNS",24,TEXT);title.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));
-        TextView version=text(BuildConfig.VERSION_NAME,10,MUTED);version.setPadding(dp(7),dp(7),0,0);brand.addView(title);brand.addView(version);header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
+        TextView version=text(appVersion(),10,MUTED);version.setPadding(dp(7),dp(7),0,0);brand.addView(title);brand.addView(version);header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
         LinearLayout mode=row();modeSwitch=new Switch(this);modeSwitch.setShowText(false);modeSwitch.setChecked(profile.vpn);modeSwitch.setScaleX(.88f);modeSwitch.setScaleY(.88f);
         styleModeSwitch(modeSwitch);
         modeLabel=text(profile.vpn?"VPN mode":"Proxy mode",10,MUTED);modeLabel.setSingleLine(true);mode.addView(modeSwitch);mode.addView(modeLabel);header.addView(mode);
@@ -250,7 +250,7 @@ public final class MainActivity extends Activity {
         String[] tabs={"profile","settings","connect","tools","log"};String[] labels={"Profile","Settings","Connect","Tools","Log"};
         for(int i=0;i<tabs.length;i++){final String key=tabs[i];boolean selected=key.equals(currentTab);LinearLayout item=new LinearLayout(this);item.setGravity(Gravity.CENTER);item.setOrientation(LinearLayout.VERTICAL);item.setPadding(dp(2),dp(1),dp(2),dp(1));GradientDrawable d=bg(selected?palette.accentSoft:palette.surface,16);item.setBackground(d);
             NavGlyph glyph=new NavGlyph(key,selected?palette.accentStrong:palette.muted);item.addView(glyph,new LinearLayout.LayoutParams(dp(28),dp(27)));
-            TextView label=text(labels[i],10,selected?palette.accentStrong:palette.muted);label.setGravity(Gravity.CENTER);label.setTypeface(Typeface.create("sans-serif",selected?Typeface.MEDIUM:Typeface.NORMAL));item.addView(label);
+            TextView label=text(labels[i],10,selected?palette.accentStrong:palette.muted);label.setGravity(Gravity.CENTER);label.setTypeface(Typeface.create(selected?"sans-serif-medium":"sans-serif",Typeface.NORMAL));item.addView(label);
             item.setOnClickListener(v->{if(!key.equals(currentTab)){currentTab=key;renderTab(key);}});nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
         return nav;
     }
@@ -341,7 +341,8 @@ public final class MainActivity extends Activity {
     void cancelSpeedTest(){TunnelSpeedTest test=activeSpeedTest;if(test!=null){test.close();activeSpeedTest=null;}if(speedTestButton!=null)speedTestButton.setText("Speed test");}
     void openProfileClipboard(){importProfileClipboard();}
     void importProfileClipboard(){if(!editable())return;try{ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);ClipData clip=clipboard.getPrimaryClip();if(clip==null)throw new IOException("Clipboard is empty");importProfile(clip.getItemAt(0).coerceToText(this).toString());}catch(Exception e){toast("Could not read profile JSON from clipboard");}}
-    void showAbout(){new AlertDialog.Builder(this).setTitle("BridgeDNS "+BuildConfig.VERSION_NAME).setMessage("Independent Android client for MasterDnsVPN\nProfiles are encrypted with Android Keystore.\nPublic IP checks use api.ipify.org over HTTPS.\nGeneral UDP support depends on the tunnel core.").setPositiveButton("OK",null).show();}
+    String appVersion(){try{android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);return info.versionName==null?"0.2.0":info.versionName;}catch(Exception ignored){return "0.2.0";}}
+    void showAbout(){new AlertDialog.Builder(this).setTitle("BridgeDNS "+appVersion()).setMessage("Independent Android client for MasterDnsVPN\nProfiles are encrypted with Android Keystore.\nPublic IP checks use api.ipify.org over HTTPS.\nGeneral UDP support depends on the tunnel core.").setPositiveButton("OK",null).show();}
     boolean editable(){if(active||busy){toast("Disconnect before changing settings");return false;}return true;}
     void refresh(){
         if(currentTab!=null){renderTab(currentTab);return;}
@@ -476,7 +477,7 @@ public final class MainActivity extends Activity {
         if(w==1)try{JSONObject j=new JSONObject(profile.json());j.put("key","");copy(j.toString(2));toast("Settings copied without the key");}catch(Exception ignored){}
         if(w==2&&editable()){EditText f=new EditText(this);f.setText(profile.bypass);f.setHint("com.example.app, com.example.other");new AlertDialog.Builder(this).setTitle("Excluded app package names").setMessage("These apps connect directly. Separate package names with commas. An uninstalled package will prevent VPN startup.").setView(f).setPositiveButton("Save",(a,b)->{String old=profile.bypass;try{profile.bypass=f.getText().toString().trim();profile.validate();persist();}catch(Exception e){profile.bypass=old;toast(e.getMessage());}}).setNegativeButton("Cancel",null).show();}
         if(w==3){copy(String.join("\n",events));toast("Session log copied with the key redacted");}
-        if(w==4)new AlertDialog.Builder(this).setTitle("BridgeDNS "+BuildConfig.VERSION_NAME).setMessage("Independent Android client for MasterDnsVPN\nCore: masterking32/MasterDnsVPN (MIT)\nTUN: heiher/hev-socks5-tunnel (MIT)\n\nNo ads or telemetry. Profiles are encrypted using Android Keystore.\n\nGeneral UDP is not supported. Real-device and server testing is required.").setPositiveButton("OK",null).show();
+        if(w==4)new AlertDialog.Builder(this).setTitle("BridgeDNS "+appVersion()).setMessage("Independent Android client for MasterDnsVPN\nCore: masterking32/MasterDnsVPN (MIT)\nTUN: heiher/hev-socks5-tunnel (MIT)\n\nNo ads or telemetry. Profiles are encrypted using Android Keystore.\n\nGeneral UDP is not supported. Real-device and server testing is required.").setPositiveButton("OK",null).show();
         if(w==5)try{event(NativeBridge.selfTest());toast("Native library check passed");}catch(Throwable e){event("Native library check failed: "+e.toString());}
         if(w==6)testDataPath();
         if(w==7&&editable())try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE),21);}catch(Exception e){toast("Could not open file picker");}

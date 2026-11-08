@@ -22,7 +22,7 @@ final class PublicIpProbe {
         connection.setConnectTimeout(7000);
         connection.setReadTimeout(7000);
         connection.setRequestProperty("Accept", "text/plain");
-        connection.setRequestProperty("User-Agent", "BridgeDNS/" + BuildConfig.VERSION_NAME);
+        connection.setRequestProperty("User-Agent", "BridgeDNS-Android");
         try {
             if (connection.getResponseCode() != 200) throw new IOException("Public IP service returned HTTP " + connection.getResponseCode());
             byte[] bytes = readLimited(connection.getInputStream(), 128);
@@ -39,7 +39,7 @@ final class PublicIpProbe {
                 parameters.setEndpointIdentificationAlgorithm("HTTPS");
                 socket.setSSLParameters(parameters);
                 socket.startHandshake();
-                socket.getOutputStream().write(("GET / HTTP/1.1\r\nHost: api.ipify.org\r\nUser-Agent: BridgeDNS/" + BuildConfig.VERSION_NAME + "\r\nAccept: text/plain\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                socket.getOutputStream().write(("GET / HTTP/1.1\r\nHost: api.ipify.org\r\nUser-Agent: BridgeDNS-Android\r\nAccept: text/plain\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
                 socket.getOutputStream().flush();
                 BufferedInputStream input = new BufferedInputStream(socket.getInputStream());
                 String status = line(input);
