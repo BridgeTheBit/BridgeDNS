@@ -71,9 +71,8 @@ jobs:
           version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
           test -n "$version_code"
           test -n "$version_name"
-          version_code="$(sed -n "s/.*versionCode \([0-9][0-9]*\).*/\1/p" app/build.gradle | head -n1)"
-          version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
-
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
       - name: Build native libraries
         env:
           ABIS: ${{ matrix.abis }}
@@ -124,9 +123,8 @@ jobs:
           version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
           test -n "$version_code"
           test -n "$version_name"
-          version_code="$(sed -n "s/.*versionCode \([0-9][0-9]*\).*/\1/p" app/build.gradle | head -n1)"
-          version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
-
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
       - name: Download APKs
         uses: actions/download-artifact@v4
         with:
