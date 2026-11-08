@@ -67,12 +67,12 @@ jobs:
         id: version
         shell: bash
         run: |
-          version_code="$(sed -n "s/.*versionCode \\([0-9][0-9]*\\).*/\\1/p" app/build.gradle | head -n1)"
-          version_name="$(sed -n "s/.*versionName '\\([^']*\\)'.*/\\1/p" app/build.gradle | head -n1)"
+          version_code="$(sed -n "s/.*versionCode \([0-9][0-9]*\).*/\1/p" app/build.gradle | head -n1)"
+          version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
           test -n "$version_code"
           test -n "$version_name"
-          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
-          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          version_code="$(sed -n "s/.*versionCode \([0-9][0-9]*\).*/\1/p" app/build.gradle | head -n1)"
+          version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
 
       - name: Build native libraries
         env:
@@ -120,12 +120,12 @@ jobs:
         id: version
         shell: bash
         run: |
-          version_code="$(sed -n "s/.*versionCode \\([0-9][0-9]*\\).*/\\1/p" app/build.gradle | head -n1)"
-          version_name="$(sed -n "s/.*versionName '\\([^']*\\)'.*/\\1/p" app/build.gradle | head -n1)"
+          version_code="$(sed -n "s/.*versionCode \([0-9][0-9]*\).*/\1/p" app/build.gradle | head -n1)"
+          version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
           test -n "$version_code"
           test -n "$version_name"
-          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
-          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          version_code="$(sed -n "s/.*versionCode \([0-9][0-9]*\).*/\1/p" app/build.gradle | head -n1)"
+          version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
 
       - name: Download APKs
         uses: actions/download-artifact@v4
@@ -133,7 +133,6 @@ jobs:
           path: release-assets
           pattern: BridgeDNS-*-v${{ steps.version.outputs.version_name }}
           merge-multiple: true
-
 
       - name: Verify release APKs
         env:
@@ -145,6 +144,7 @@ jobs:
             test -s "$asset"
           done
           test "$(find release-assets -maxdepth 1 -type f -name 'BridgeDNS-*.apk' | wc -l)" -eq 4
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
