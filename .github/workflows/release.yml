@@ -2,17 +2,18 @@ name: Build and release BridgeDNS
 
 on:
   push:
+    branches:
+      - codex/redesign-android-tabs
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to build, for example v0.2.0
+        description: Release tag matching app/build.gradle, for example v0.2.1
         required: true
-        default: v0.2.0
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   ANDROID_API: '35'
@@ -109,8 +110,11 @@ jobs:
 
   release:
     name: Publish BridgeDNS GitHub Release
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -151,7 +155,7 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME}"
           if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then tag="${INPUT_TAG:-v${VERSION}}"; fi
-          test -n "$tag"
+          test "$tag" = "v${VERSION}"
           gh release create "$tag" release-assets/*.apk \
             --title "BridgeDNS ${tag}" \
             --generate-notes
