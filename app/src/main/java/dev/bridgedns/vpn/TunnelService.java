@@ -42,6 +42,8 @@ public final class TunnelService extends VpnService {
                 File input=new File(getNoBackupFilesDir(),"pending-profile.json");
                 try {profile=Profile.parse(new String(java.nio.file.Files.readAllBytes(input.toPath()),StandardCharsets.UTF_8));}
                 finally {input.delete();}
+                ResolverStore.migrateIfNeeded(this,new org.json.JSONArray());
+                profile.resolvers=String.join("\n",ResolverStore.load(this));
                 profile.validate(); startTunnel();
             }
             catch(Throwable e){fail(e);}
@@ -90,8 +92,20 @@ public final class TunnelService extends VpnService {
         if(profile.vpn){
             Builder b=new Builder().setSession("BridgeDNS").setMtu(1280).addAddress("198.18.0.1",30)
                 .addAddress("fd00:6e61:7661::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
-            b.addDisallowedApplication(getPackageName());
-            for(String pkg:profile.bypass.split("[,\\s]+")) if(!pkg.isEmpty() && !pkg.equals(getPackageName())) b.addDisallowedApplication(pkg);
+            if(profile.routeAllApps) {
+                b.addDisallowedApplication(getPackageName());
+                for(String pkg:profile.bypass.split("[,\\s]+")) if(!pkg.isEmpty() && !pkg.equals(getPackageName())) {
+                    try { getPackageManager().getApplicationInfo(pkg,0); b.addDisallowedApplication(pkg); }
+                    catch(android.content.pm.PackageManager.NameNotFoundException ignored) { }
+                }
+            } else {
+                int added=0;
+                for(String pkg:profile.allowedApps.split("[,\\s]+")) if(!pkg.isEmpty() && !pkg.equals(getPackageName())) {
+                    try { getPackageManager().getApplicationInfo(pkg,0); b.addAllowedApplication(pkg); added++; }
+                    catch(android.content.pm.PackageManager.NameNotFoundException ignored) { }
+                }
+                if(added==0) throw new IllegalStateException("None of the selected apps are installed. Update the app selection in Settings.");
+            }
             if(stopping.get()) return;
             tun=b.establish(); if(tun==null) throw new IOException("VPN permission was revoked");
             File yaml=new File(dir,"tun.yml"); write(yaml,"tunnel:\n  mtu: 1280\n  ipv4: 198.18.0.1\n  ipv6: 'fd00:6e61:7661::1'\nsocks5:\n  address: 127.0.0.1\n  port: 18000\n  udp: 'udp'\nmisc:\n  log-level: error\n");

@@ -4,9 +4,9 @@ import org.json.JSONObject;
 import java.util.Locale;
 
 final class Profile {
-    String name="My server", domain="", key="", resolvers="1.1.1.1:53\n8.8.8.8:53", bypass="";
+    String name="My server", domain="", key="", resolvers="1.1.1.1:53\n8.8.8.8:53", bypass="", allowedApps="";
     int encryption=1, preset=0;
-    boolean vpn=true;
+    boolean vpn=true, routeAllApps=true;
     boolean compatibility=false;
     boolean multipath=false;
     int maxPaths=4;
@@ -15,11 +15,13 @@ final class Profile {
         JSONObject j=new JSONObject(text); Profile p=new Profile();
         p.name=j.optString("name",p.name); p.domain=j.optString("domain",""); p.key=j.optString("key","");
         p.resolvers=j.optString("resolvers",p.resolvers); p.bypass=j.optString("bypass","");
+        p.routeAllApps=j.optBoolean("routeAllApps",true);p.allowedApps=j.optString("allowedApps","");
         p.encryption=j.optInt("encryption",1); p.preset=j.optInt("preset",0); p.vpn=j.optBoolean("vpn",true);p.compatibility=j.optBoolean("compatibility",false); p.multipath=j.optBoolean("multipath",false);p.maxPaths=j.optInt("maxPaths",4); p.scanConcurrency=j.optInt("scanConcurrency",8); return p;
     }
     String json() throws Exception {
-        return new JSONObject().put("name",name).put("domain",domain).put("key",key).put("resolvers",resolvers)
-            .put("bypass",bypass).put("encryption",encryption).put("preset",preset).put("vpn",vpn).put("compatibility",compatibility).put("multipath",multipath).put("maxPaths",maxPaths).put("scanConcurrency",scanConcurrency).toString();
+        return new JSONObject().put("name",name).put("domain",domain).put("key",key)
+            .put("bypass",bypass).put("routeAllApps",routeAllApps).put("allowedApps",allowedApps)
+            .put("encryption",encryption).put("preset",preset).put("vpn",vpn).put("compatibility",compatibility).put("multipath",multipath).put("maxPaths",maxPaths).put("scanConcurrency",scanConcurrency).toString();
     }
     String exportJson(boolean includeKey) throws Exception {
         JSONObject j=new JSONObject(json());if(!includeKey)j.put("key","");return j.toString(2);
@@ -42,6 +44,12 @@ final class Profile {
         }
         if(count==0) throw new IllegalArgumentException("Enter at least one resolver");
         for(String s:bypass.split("[,\\s]+")) if(!s.isEmpty() && !s.matches("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+")) throw new IllegalArgumentException("Invalid app package name");
+        int selected=0;
+        for(String s:allowedApps.split("[,\\s]+")) if(!s.isEmpty()) {
+            if(!s.matches("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+")) throw new IllegalArgumentException("Invalid selected app package name");
+            selected++;
+        }
+        if(vpn&&!routeAllApps&&selected==0) throw new IllegalArgumentException("Select at least one app to route through the VPN");
     }
     String toml(String socketPath) {
         int duplicate=multipath?1:compatibility?1:preset==1?1:preset==2?3:2;

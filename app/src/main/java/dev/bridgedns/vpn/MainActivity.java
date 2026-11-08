@@ -4,6 +4,8 @@ import android.annotation.SuppressLint;
 import android.Manifest;
 import android.app.*;
 import android.content.*;
+import android.content.pm.*;
+import android.content.res.ColorStateList;
 import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.net.VpnService;
@@ -18,24 +20,36 @@ import java.net.*;
 import java.io.*;
 
 public final class MainActivity extends Activity {
-    static final int BG=0xff09121d,CARD=0xff121f2d,LINE=0xff263747,TEXT=0xffecf4f8,MUTED=0xff93a9bb,MINT=0xff53e5c2;
+    int BG=0xff071a22,CARD=0xff10323b,LINE=0xff1b4650,TEXT=0xffedf7f6,MUTED=0xffa5bcbd,MINT=0xff43dfc6;
+    UiPalette palette;
     Profile profile=new Profile(); JSONArray profiles=new JSONArray(); int selected=0;
-    boolean active=false,busy=false; String status="Ready when you are";
-    TextView state,up,down,time,modeText,profileText,presetText,eventsText;
-    TextView upVolume,downVolume,resolverCounter,scanProgress,transportTotals;
-    Orbit orbit; LinearLayout root; long lastUp,lastDown,lastSample;
+    boolean active=false,busy=false; String status="Disconnected";
+    TextView state,statusSubtitle,up,down,time,modeText,profileText,presetText,eventsText;
+    TextView upVolume,downVolume,resolverCounter,scanProgress,transportTotals,publicIpText,pingText,selectedAppsSummary,themeSummary;
+    Orbit orbit; LinearLayout root,shell,bottomNav; FrameLayout contentHost; long lastUp,lastDown,lastSample;int navigationInsetBottom=0;
+    String currentTab="connect"; Switch modeSwitch,routingModeSwitch; TextView modeLabel,routingModeLabel;
     final ArrayDeque<String> events=new ArrayDeque<>();
     final ExecutorService worker=Executors.newSingleThreadExecutor();
     LogPane logScroll;
     CheckBox followLogs;
     final ExecutorService probeWorker=Executors.newSingleThreadExecutor();
+    final ExecutorService speedWorker=Executors.newSingleThreadExecutor();
+    final ExecutorService ipWorker=Executors.newSingleThreadExecutor();
+    final Handler mainHandler=new Handler(Looper.getMainLooper());
+    final Runnable resolverPoll=new Runnable(){public void run(){if("connect".equals(currentTab)||active)sendBroadcast(new Intent(TunnelService.RESOLVERS_QUERY).setPackage(getPackageName()));mainHandler.postDelayed(this,5000);}};
+    volatile TunnelSpeedTest activeSpeedTest;
+    volatile boolean ipProbeRunning=false; Boolean lastIpViaTunnel=null;String lastPublicIp="—";
     Button testButton;
+    Button speedTestButton,webCheckButton,allAppsChoice,selectedAppsChoice;
+    LinearLayout resolverListContainer;
+    int resolverImportRequest=30,resolverExportRequest=31;
     Future<?> dnsTask;
     int logGeneration=0;
     boolean testing=false;
     String lastError="";
     Button vpnChoice,proxyChoice,standardChoice,multiChoice;
     TextView routeSummary,pathLimit,scanSetting;
+    LinearLayout appRoutingCard;
     Spinner profilePicker; boolean refreshingProfiles;
     @Override protected void attachBaseContext(Context base) {
         android.content.res.Configuration config=new android.content.res.Configuration(base.getResources().getConfiguration());
@@ -43,40 +57,49 @@ public final class MainActivity extends Activity {
         super.attachBaseContext(base.createConfigurationContext(config));
     }
     final BroadcastReceiver receiver=new BroadcastReceiver(){public void onReceive(Context c,Intent i){
+        if(TunnelService.RESOLVERS_STATE.equals(i.getAction())){updatePing();return;}
+        boolean wasActive=active;
         active=i.getBooleanExtra("active",false);busy=i.getBooleanExtra("busy",false);
         String next=i.getStringExtra("status"); if(next!=null&&!next.equals(status)){status=next;event(next);}
         String error=i.getStringExtra("error"); if(error!=null&&!error.isEmpty()&&!error.equals(lastError)){lastError=error;event(error);}
         String core=i.getStringExtra("core_log");if(core!=null&&!core.isEmpty())for(String line:core.split("\n"))if(!line.isEmpty())event(line);
-        state.setText(status);updatePowerState();
+        updatePowerState();updateModeSwitch();
         long u=i.getLongExtra("up",0),d=i.getLongExtra("down",0),now=SystemClock.elapsedRealtime();
         double dt=lastSample==0?1:Math.max(0.1,(now-lastSample)/1000.0);
-        up.setText(format(active&&lastSample!=0?Math.max(0,u-lastUp)/dt:0)+"/s");down.setText(format(active&&lastSample!=0?Math.max(0,d-lastDown)/dt:0)+"/s");
-        upVolume.setText("TCP "+format(u));downVolume.setText("TCP "+format(d));
+        if(up!=null)up.setText(format(active&&lastSample!=0?Math.max(0,u-lastUp)/dt:0)+"/s");if(down!=null)down.setText(format(active&&lastSample!=0?Math.max(0,d-lastDown)/dt:0)+"/s");
+        if(upVolume!=null)upVolume.setText("Total: "+format(u)+"\n(incl. overhead): "+format(i.getLongExtra("wire_up",0)));if(downVolume!=null)downVolume.setText("Total: "+format(d)+"\n(incl. overhead): "+format(i.getLongExtra("wire_down",0)));
         transportTotals.setText("DNS tunnel traffic • includes overhead\nUpload ↑ "+format(i.getLongExtra("wire_up",0))+"    Download ↓ "+format(i.getLongExtra("wire_down",0)));
         long total=i.getLongExtra("total",0),healthy=i.getLongExtra("healthy",0),checked=i.getLongExtra("checked",0);
-        resolverCounter.setText("Resolvers  "+healthy+" / "+total);
+        if(resolverCounter!=null)resolverCounter.setText(healthy+" / "+total);
         scanProgress.setText("Healthy / total • checked "+checked+" / "+total+(i.getBooleanExtra("scanning",false)?" • scanning":""));
         lastSample=now;lastUp=u;lastDown=d;
-        long s=i.getLongExtra("seconds",0);time.setText(String.format(Locale.US,"%02d:%02d:%02d",s/3600,s/60%60,s%60));
+        long s=i.getLongExtra("seconds",0);if(time!=null)time.setText(String.format(Locale.US,"%02d:%02d:%02d",s/3600,s/60%60,s%60));
+        if(wasActive!=active||lastIpViaTunnel==null)probePublicIp(active);
     }};
     @Override public void onCreate(Bundle saved){
-        super.onCreate(saved);
+        UiPalette.apply(this);super.onCreate(saved);palette=UiPalette.from(this);applyWindowColors();
         try{profiles=Vault.load(this);selected=getPreferences(0).getInt("selected",0);if(selected>=profiles.length())selected=0;if(profiles.length()>0)profile=Profile.parse(profiles.getString(selected));}
         catch(Exception e){event("Could not read saved profiles. Please check your settings.");}
+        ResolverStore.migrateIfNeeded(this,profiles);profile.resolvers=String.join("\n",ResolverStore.load(this));
+        currentTab=getPreferences(0).getString("tab","connect");
+        String savedLog=AppLog.read(this);if(!savedLog.isEmpty())for(String line:savedLog.split("\n")){if(events.size()==300)events.removeFirst();events.addLast(line);}
         build();
         if(Build.VERSION.SDK_INT>=33)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},8);
     }
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    @Override public void onStart(){super.onStart();IntentFilter f=new IntentFilter(TunnelService.STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(receiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiver,f);sendBroadcast(new Intent(TunnelService.QUERY).setPackage(getPackageName()));}
-    @Override public void onStop(){super.onStop();unregisterReceiver(receiver);}
-    @Override public void onDestroy(){worker.shutdownNow();probeWorker.shutdownNow();super.onDestroy();}
+    @Override public void onStart(){super.onStart();IntentFilter f=new IntentFilter(TunnelService.STATE);f.addAction(TunnelService.RESOLVERS_STATE);if(Build.VERSION.SDK_INT>=33)registerReceiver(receiver,f,Context.RECEIVER_NOT_EXPORTED);else registerReceiver(receiver,f);sendBroadcast(new Intent(TunnelService.QUERY).setPackage(getPackageName()));sendBroadcast(new Intent(TunnelService.RESOLVERS_QUERY).setPackage(getPackageName()));mainHandler.post(resolverPoll);mainHandler.postDelayed(()->probePublicIp(active),1200);}
+    @Override public void onStop(){mainHandler.removeCallbacksAndMessages(null);unregisterReceiver(receiver);super.onStop();}
+    @Override public void onDestroy(){worker.shutdownNow();probeWorker.shutdownNow();speedWorker.shutdownNow();ipWorker.shutdownNow();TunnelSpeedTest test=activeSpeedTest;if(test!=null)test.close();super.onDestroy();}
     void build(){
+        if(currentTab==null||currentTab.isEmpty())currentTab="connect";
+        buildModern();
+        if(currentTab!=null)return;
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(BG);scroll.setFillViewport(true);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(24),dp(16),dp(24),dp(28));root.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         scroll.addView(root);setContentView(scroll);
         scroll.setOnApplyWindowInsetsListener((v,insets)->{root.setPadding(dp(24),dp(16)+insets.getSystemWindowInsetTop(),dp(24),dp(24)+insets.getSystemWindowInsetBottom());return insets.consumeSystemWindowInsets();});
         LinearLayout header=row();TextView brand=text("BridgeDNS",29,TEXT);brand.setTypeface(null,Typeface.BOLD);brand.setLetterSpacing(.18f);
-        TextView beta=text("0.1.0",11,MINT);beta.setPadding(dp(12),dp(7),dp(12),dp(7));beta.setBackground(bg(0xff163c37,30));header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));header.addView(beta);root.addView(header);
+        TextView beta=text(appVersion(),11,MINT);beta.setPadding(dp(12),dp(7),dp(12),dp(7));beta.setBackground(bg(0xff163c37,30));header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));header.addView(beta);root.addView(header);
         TextView sub=text("Find another way through.",14,MUTED);sub.setPadding(0,dp(9),0,dp(12));root.addView(sub);
         orbit=new Orbit();orbit.setOnClickListener(v->toggle());root.addView(orbit,new LinearLayout.LayoutParams(-1,dp(230)));
         state=text(status,19,TEXT);state.setGravity(Gravity.CENTER);state.setTypeface(null,Typeface.BOLD);root.addView(state);
@@ -135,8 +158,194 @@ public final class MainActivity extends Activity {
         resolverCounter.setOnClickListener(v->openResolvers());
         refresh();renderEvents();
     }
+    void buildModern(){
+        palette=UiPalette.from(this);BG=palette.background;CARD=palette.card;LINE=palette.line;TEXT=palette.text;MUTED=palette.muted;MINT=palette.accent;
+        shell=new LinearLayout(this);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(BG);shell.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
+        contentHost=new FrameLayout(this);shell.addView(contentHost,new LinearLayout.LayoutParams(-1,0,1));
+        bottomNav=makeBottomNavigation();shell.addView(bottomNav,new LinearLayout.LayoutParams(-1,navigationHeight()));
+        shell.setOnApplyWindowInsetsListener((v,insets)->{navigationInsetBottom=insets.getSystemWindowInsetBottom();if(bottomNav!=null){bottomNav.setPadding(dp(5),dp(5),dp(5),dp(5)+navigationInsetBottom);ViewGroup.LayoutParams params=bottomNav.getLayoutParams();params.height=navigationHeight();bottomNav.setLayoutParams(params);}return insets;});
+        setContentView(shell);applyWindowColors();renderTab(currentTab);
+    }
+    void applyWindowColors(){
+        boolean dark=UiPalette.isDark(this);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
+        if(Build.VERSION.SDK_INT>=26)getWindow().getDecorView().setSystemUiVisibility(dark?0:View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+    }
+    void renderTab(String tab){
+        if(tab==null||!Arrays.asList("profile","settings","connect","tools","log").contains(tab))tab="connect";
+        currentTab=tab;getPreferences(0).edit().putString("tab",tab).apply();
+        if(shell!=null&&bottomNav!=null){shell.removeView(bottomNav);bottomNav=makeBottomNavigation();shell.addView(bottomNav,new LinearLayout.LayoutParams(-1,navigationHeight()));}
+        state=statusSubtitle=up=down=time=modeText=profileText=presetText=eventsText=null;upVolume=downVolume=resolverCounter=publicIpText=pingText=selectedAppsSummary=themeSummary=null;
+        orbit=null;profilePicker=null;vpnChoice=proxyChoice=standardChoice=multiChoice=allAppsChoice=selectedAppsChoice=null;routingModeSwitch=null;routingModeLabel=null;
+        routeSummary=pathLimit=scanSetting=null;appRoutingCard=null;testButton=speedTestButton=webCheckButton=null;resolverListContainer=null;logScroll=null;followLogs=null;
+        scanProgress=new TextView(this);transportTotals=new TextView(this);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setBackgroundColor(BG);
+        root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(22),dp(10),dp(22),dp(22));root.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);scroll.addView(root);
+        scroll.setOnApplyWindowInsetsListener((v,insets)->{root.setPadding(dp(22),dp(10)+insets.getSystemWindowInsetTop(),dp(22),dp(20));return insets.consumeSystemWindowInsets();});
+        contentHost.removeAllViews();contentHost.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+        addHeader();TextView tagline=text("Find another way through.",13,MUTED);tagline.setPadding(0,dp(3),0,dp(12));root.addView(tagline);
+        switch(tab){case "profile":buildProfileTab();break;case "settings":buildSettingsTab();break;case "tools":buildToolsTab();break;case "log":buildLogTab();break;default:buildConnectTab();}
+        updatePowerState();updateModeSwitch();renderEvents();updatePing();
+        if("tools".equals(tab))refreshResolverList();
+    }
+    void addHeader(){
+        LinearLayout header=row();LinearLayout brand=row();TextView title=text("BridgeDNS",24,TEXT);title.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));
+        TextView version=text(appVersion(),10,MUTED);version.setPadding(dp(7),dp(7),0,0);brand.addView(title);brand.addView(version);header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
+        LinearLayout mode=row();modeSwitch=new Switch(this);modeSwitch.setShowText(false);modeSwitch.setChecked(profile.vpn);modeSwitch.setScaleX(.88f);modeSwitch.setScaleY(.88f);
+        styleModeSwitch(modeSwitch);
+        modeLabel=text(profile.vpn?"VPN mode":"Proxy mode",10,MUTED);modeLabel.setSingleLine(true);mode.addView(modeSwitch);mode.addView(modeLabel);header.addView(mode);
+        modeSwitch.setOnCheckedChangeListener((button,checked)->{if(!editable()){modeSwitch.setChecked(profile.vpn);return;}profile.vpn=checked;persist();renderTab(currentTab);});
+        root.addView(header);
+    }
+    void styleModeSwitch(Switch control){int[][] states=new int[][]{new int[]{android.R.attr.state_checked},new int[]{}};control.setTrackTintList(new ColorStateList(states,new int[]{MINT,LINE}));control.setThumbTintList(new ColorStateList(states,new int[]{0xffffffff,MUTED}));}
+    void updateModeSwitch(){if(modeSwitch!=null){modeSwitch.setChecked(profile.vpn);modeSwitch.setEnabled(!active&&!busy);}
+        if(modeLabel!=null)modeLabel.setText(profile.vpn?"VPN mode":"Proxy mode");
+        if(routingModeSwitch!=null){routingModeSwitch.setChecked(profile.multipath);routingModeSwitch.setEnabled(!active&&!busy);}
+        if(routingModeLabel!=null)routingModeLabel.setText(profile.multipath?"Multipath":"Standard");}
+    void renderTabFromChange(){renderTab(currentTab);}
+    void buildConnectTab(){
+        LinearLayout hero=card();hero.setGravity(Gravity.CENTER);hero.setPadding(dp(14),dp(8),dp(14),dp(10));
+        orbit=new Orbit();orbit.setOnClickListener(v->toggle());hero.addView(orbit,new LinearLayout.LayoutParams(-1,dp(238)));
+        state=text(displayStatus(),25,TEXT);state.setGravity(Gravity.CENTER);state.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));hero.addView(state);
+        statusSubtitle=text(connectionSubtitle(),13,MUTED);statusSubtitle.setGravity(Gravity.CENTER);hero.addView(statusSubtitle);root.addView(hero);
+        LinearLayout details=card();LinearLayout first=row();time=valueColumn(first,"Duration","00:00:00");pingText=valueColumn(first,"Ping","—");details.addView(first);
+        View divider=new View(this);divider.setBackgroundColor(LINE);LinearLayout.LayoutParams dividerParams=new LinearLayout.LayoutParams(-1,dp(1));dividerParams.topMargin=dp(8);dividerParams.bottomMargin=dp(8);details.addView(divider,dividerParams);
+        LinearLayout second=row();resolverCounter=valueColumn(second,"Resolvers","— / —");resolverCounter.setOnClickListener(v->openResolvers());publicIpText=valueColumn(second,"Public IP",lastPublicIp);publicIpText.setOnClickListener(v->probePublicIp(active));details.addView(second);scanProgress=text("Healthy / total · checked — / —",10,MUTED);details.addView(scanProgress);root.addView(details);
+        LinearLayout traffic=row();traffic.addView(trafficCard("Download ↓",false),new LinearLayout.LayoutParams(0,-2,1));traffic.addView(trafficCard("Upload ↑",true),new LinearLayout.LayoutParams(0,-2,1));root.addView(traffic);
+        TextView note=text("Whole-device mode routes selected traffic through the tunnel. General UDP support depends on the tunnel core.",11,MUTED);note.setPadding(dp(4),dp(8),dp(4),dp(4));root.addView(note);
+    }
+    TextView valueColumn(LinearLayout row,String label,String value){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(4),dp(6),dp(4),dp(6));TextView title=text(label,11,MUTED);TextView v=text(value,16,TEXT);v.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));box.addView(title);box.addView(v);row.addView(box,new LinearLayout.LayoutParams(0,-2,1));return v;
+    }
+    View trafficCard(String label,boolean upload){
+        LinearLayout box=card();TextView title=text(label,12,MUTED);box.addView(title);TextView rate=text("0 B/s",20,TEXT);rate.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));box.addView(rate);
+        TextView total=text("Total: 0 B\n(incl. overhead): 0 B",11,MUTED);total.setLineSpacing(dp(2),1);box.addView(total);
+        if(upload){up=rate;upVolume=total;}else{down=rate;downVolume=total;}return box;
+    }
+    void buildProfileTab(){
+        LinearLayout box=card();box.addView(text("Profiles",17,TEXT));
+        profilePicker=new Spinner(this);profilePicker.setBackground(outline(BG,12));profilePicker.setPopupBackgroundDrawable(bg(CARD,12));box.addView(profilePicker,new LinearLayout.LayoutParams(-1,dp(50)));
+        profileText=text("",12,MUTED);box.addView(profileText);LinearLayout actions=row();
+        Button add=button("Add",palette.accentSoft,palette.accentStrong),edit=button("Edit",BG,MINT),manage=button("More",BG,MUTED);
+        actions.addView(add,new LinearLayout.LayoutParams(0,dp(44),1));actions.addView(edit,new LinearLayout.LayoutParams(0,dp(44),1));actions.addView(manage,new LinearLayout.LayoutParams(0,dp(44),1));box.addView(actions);root.addView(box);
+        add.setOnClickListener(v->{if(editable())editProfile(true);});edit.setOnClickListener(v->{if(editable())editProfile();});manage.setOnClickListener(v->profileActions(manage));
+        profilePicker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int position,long id){
+            if(refreshingProfiles||position==selected||profiles.length()==0)return;if(!editable()){profilePicker.setSelection(selected);return;}
+            try{profile=Profile.parse(profiles.getString(position));profile.resolvers=String.join("\n",ResolverStore.load(MainActivity.this));selected=position;getPreferences(0).edit().putInt("selected",selected).apply();renderTab("profile");}catch(Exception e){toast("Could not open profile");}
+        }});refreshProfilePicker();
+        LinearLayout actions2=card();actions2.addView(text("Profile files",15,TEXT));LinearLayout row=row();Button importFile=button("Import file",BG,MINT),importClipboard=button("Paste JSON",BG,MINT),export=button("Export",BG,MUTED);
+        row.addView(importFile,new LinearLayout.LayoutParams(0,dp(44),1));row.addView(importClipboard,new LinearLayout.LayoutParams(0,dp(44),1));row.addView(export,new LinearLayout.LayoutParams(0,dp(44),1));actions2.addView(row);root.addView(actions2);
+        importFile.setOnClickListener(v->openProfileImport());importClipboard.setOnClickListener(v->importProfileClipboard());export.setOnClickListener(v->profileActions(export));
+        LinearLayout tune=card();presetText=text("",15,TEXT);tune.addView(presetText);tune.addView(text("Balance request volume and loss tolerance",11,MUTED));tune.setOnClickListener(v->{if(editable())new AlertDialog.Builder(this).setTitle("Connection tuning").setSingleChoiceItems(new String[]{"Balanced · 2 copies","Efficient · 1 copy","Resilient · 3 copies"},profile.preset,(d,w)->{profile.preset=w;persist();refresh();d.dismiss();}).show();});root.addView(tune);
+        refreshProfilePicker();presetText.setText("Connection tuning · "+new String[]{"Balanced","Efficient","Resilient"}[Math.max(0,Math.min(2,profile.preset))]);
+    }
+    void refreshProfilePicker(){
+        if(profilePicker==null)return;refreshingProfiles=true;String[] names=new String[Math.max(1,profiles.length())];
+        for(int i=0;i<names.length;i++)try{names[i]=profiles.length()==0?"No saved profile · Add one":Profile.parse(profiles.getString(i)).name;}catch(Exception e){names[i]="Profile";}
+        ArrayAdapter<String> adapter=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,names){public View getView(int pos,View v,ViewGroup parent){TextView t=(TextView)super.getView(pos,v,parent);t.setTextColor(TEXT);t.setTextSize(15);return t;}public View getDropDownView(int pos,View v,ViewGroup parent){TextView t=(TextView)super.getDropDownView(pos,v,parent);t.setTextColor(TEXT);t.setBackgroundColor(CARD);return t;}};
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);profilePicker.setAdapter(adapter);profilePicker.setSelection(Math.min(selected,names.length-1));refreshingProfiles=false;
+        if(profileText!=null)profileText.setText(profile.domain.isEmpty()?"Set the tunnel domain and server key in Edit profile.":profile.domain);
+    }
+    LinearLayout makeBottomNavigation(){
+        LinearLayout nav=new LinearLayout(this);nav.setOrientation(LinearLayout.HORIZONTAL);nav.setGravity(Gravity.CENTER);nav.setPadding(dp(5),dp(5),dp(5),dp(5)+navigationInsetBottom);nav.setBackgroundColor(palette.surface);
+        String[] tabs={"profile","settings","connect","tools","log"};String[] labels={"Profile","Settings","Connect","Tools","Log"};
+        for(int i=0;i<tabs.length;i++){final String key=tabs[i];boolean selected=key.equals(currentTab);LinearLayout item=new LinearLayout(this);item.setGravity(Gravity.CENTER);item.setOrientation(LinearLayout.VERTICAL);item.setPadding(dp(2),dp(1),dp(2),dp(1));GradientDrawable d=bg(selected?palette.accentSoft:palette.surface,16);item.setBackground(d);
+            NavGlyph glyph=new NavGlyph(key,selected?palette.accentStrong:palette.muted);item.addView(glyph,new LinearLayout.LayoutParams(dp(28),dp(27)));
+            TextView label=text(labels[i],10,selected?palette.accentStrong:palette.muted);label.setGravity(Gravity.CENTER);label.setTypeface(Typeface.create(selected?"sans-serif-medium":"sans-serif",Typeface.NORMAL));item.addView(label);
+            item.setOnClickListener(v->{if(!key.equals(currentTab)){currentTab=key;renderTab(key);}});nav.addView(item,new LinearLayout.LayoutParams(0,-1,1));}
+        return nav;
+    }
+    int navigationHeight(){return dp(68)+navigationInsetBottom;}
+    void openProfileImport(){try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE),21);}catch(Exception e){toast("Could not open file picker");}}
+    String displayStatus(){if(!lastError.isEmpty()||status.toLowerCase(Locale.ROOT).contains("fail"))return "Failed";if(busy&&!active)return "Connecting";if(active)return "Connected";return "Disconnected";}
+    void updatePing(){try{File file=new File(getNoBackupFilesDir(),"resolver-snapshot.json");if(!file.isFile())return;JSONObject snapshot=new JSONObject(new String(java.nio.file.Files.readAllBytes(file.toPath()),java.nio.charset.StandardCharsets.UTF_8));if(!snapshot.optBoolean("active",false)){if(pingText!=null)pingText.setText("—");return;}JSONArray rows=snapshot.optJSONArray("rows");if(rows==null)return;double total=0;int count=0;for(int i=0;i<rows.length();i++){JSONObject row=rows.optJSONObject(i);if(row!=null&&row.optBoolean("healthy")&&row.optDouble("rtt_ms",-1)>=0){total+=row.optDouble("rtt_ms");count++;}}if(pingText!=null)pingText.setText(count==0?"—":String.format(Locale.US,"%.0f ms",total/count));}catch(Exception ignored){}}
+    void probePublicIp(boolean throughTunnel){if(ipProbeRunning)return;ipProbeRunning=true;lastIpViaTunnel=throughTunnel;if(publicIpText!=null)publicIpText.setText("Checking…");ipWorker.execute(()->{String result;try{result=PublicIpProbe.fetch(throughTunnel);}catch(Exception e){result="Unavailable";}final String value=result;runOnUiThread(()->{ipProbeRunning=false;lastPublicIp=value;if(publicIpText!=null)publicIpText.setText(value);if(lastIpViaTunnel!=null&&lastIpViaTunnel!=active)probePublicIp(active);});});}
+    void applyProfileResolvers(){profile.resolvers=String.join("\n",ResolverStore.load(this));}
+    void applyWindowColorsForTheme(){palette=UiPalette.from(this);BG=palette.background;CARD=palette.card;LINE=palette.line;TEXT=palette.text;MUTED=palette.muted;MINT=palette.accent;}
+    void buildSettingsTab(){
+        LinearLayout routes=card();routes.addView(text("Resolver routing",16,TEXT));LinearLayout routeMode=row();routingModeSwitch=new Switch(this);routingModeSwitch.setShowText(false);routingModeSwitch.setChecked(profile.multipath);routingModeSwitch.setScaleX(.88f);routingModeSwitch.setScaleY(.88f);styleModeSwitch(routingModeSwitch);routingModeLabel=text(profile.multipath?"Multipath":"Standard",12,MUTED);routeMode.addView(routingModeSwitch);routeMode.addView(routingModeLabel);routes.addView(routeMode);
+        routeSummary=text("",11,MUTED);routes.addView(routeSummary);pathLimit=text("",13,MINT);routes.addView(pathLimit);scanSetting=text("",13,MINT);routes.addView(scanSetting);
+        routingModeSwitch.setOnCheckedChangeListener((button,checked)->{if(!editable()){routingModeSwitch.setChecked(profile.multipath);return;}profile.multipath=checked;persist();renderTab("settings");});
+        pathLimit.setOnClickListener(v->{if(editable())editPathLimit();});scanSetting.setOnClickListener(v->{if(editable())editScanConcurrency();});root.addView(routes);
+        appRoutingCard=card();appRoutingCard.addView(text("Apps routed through VPN",16,TEXT));allAppsChoice=button("All apps",BG,MUTED);selectedAppsChoice=button("Selected apps",BG,MUTED);appRoutingCard.addView(segments(allAppsChoice,selectedAppsChoice));
+        selectedAppsSummary=text("",12,MUTED);selectedAppsSummary.setPadding(0,dp(8),0,0);appRoutingCard.addView(selectedAppsSummary);
+        allAppsChoice.setOnClickListener(v->{if(editable()){profile.routeAllApps=true;profile.bypass="";persist();renderTab("settings");}});
+        selectedAppsChoice.setOnClickListener(v->{if(editable()){profile.routeAllApps=false;persist();renderTab("settings");chooseInstalledApps();}});
+        selectedAppsSummary.setOnClickListener(v->{if(editable())chooseInstalledApps();});root.addView(appRoutingCard);
+        LinearLayout appearance=card();appearance.addView(text("Appearance",16,TEXT));themeSummary=text("",13,MUTED);appearance.addView(themeSummary);Button theme=button("Choose theme",BG,MINT);appearance.addView(theme,new LinearLayout.LayoutParams(-1,dp(44)));theme.setOnClickListener(v->chooseTheme());root.addView(appearance);
+        refreshSettings();
+    }
+    void refreshSettings(){
+        if(routingModeSwitch!=null){routingModeSwitch.setChecked(profile.multipath);routingModeSwitch.setEnabled(!active&&!busy);}if(routingModeLabel!=null)routingModeLabel.setText(profile.multipath?"Multipath":"Standard");
+        if(routeSummary!=null)routeSummary.setText(profile.multipath?"Multipath spreads requests across healthy resolvers, weighted by measured latency and loss.":"Standard uses the selected reliability tuning with the normal resolver route.");
+        if(pathLimit!=null){pathLimit.setVisibility(profile.multipath?View.VISIBLE:View.GONE);pathLimit.setText("Maximum data paths  ·  "+(profile.maxPaths==0?"All healthy":profile.maxPaths)+"  ›");}
+        if(scanSetting!=null)scanSetting.setText("Scan concurrency  ·  "+profile.scanConcurrency+"  ›");
+        if(allAppsChoice!=null)segmentState(allAppsChoice,profile.routeAllApps,true);if(selectedAppsChoice!=null)segmentState(selectedAppsChoice,!profile.routeAllApps,false);
+        if(selectedAppsSummary!=null){int excluded=0;for(String pkg:profile.bypass.split("[,\\s]+"))if(!pkg.isEmpty())excluded++;selectedAppsSummary.setText(profile.routeAllApps?(excluded==0?"All apps will use the VPN tunnel.":"All apps except "+excluded+" saved exclusions. Tap All apps to clear them."):selectedAppNames());}
+        if(appRoutingCard!=null)appRoutingCard.setVisibility(profile.vpn?View.VISIBLE:View.GONE);
+        if(themeSummary!=null){String m=UiPalette.mode(this);themeSummary.setText("Theme  ·  "+("system".equals(m)?"System default":m.equals("dark")?"Dark":"Light"));}
+    }
+    String selectedAppNames(){
+        ArrayList<String> names=new ArrayList<>();android.content.pm.PackageManager pm=getPackageManager();
+        for(String pkg:profile.allowedApps.split("[,\\s]+"))if(!pkg.isEmpty())try{ApplicationInfo info=pm.getApplicationInfo(pkg,0);names.add(pm.getApplicationLabel(info).toString());}catch(Exception e){names.add(pkg);}
+        return names.isEmpty()?"No apps selected yet. Tap here to choose installed apps.":String.join(", ",names);
+    }
+    void chooseInstalledApps(){
+        Intent launcher=new Intent(Intent.ACTION_MAIN);launcher.addCategory(Intent.CATEGORY_LAUNCHER);
+        ArrayList<ResolveInfo> matches=new ArrayList<>(getPackageManager().queryIntentActivities(launcher,0));
+        TreeMap<String,ResolveInfo> unique=new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for(ResolveInfo info:matches){String pkg=info.activityInfo.packageName;if(!pkg.equals(getPackageName()))unique.put(info.loadLabel(getPackageManager()).toString()+"\u0000"+pkg,info);}
+        ArrayList<String> packages=new ArrayList<>(),labels=new ArrayList<>();for(Map.Entry<String,ResolveInfo> entry:unique.entrySet()){packages.add(entry.getValue().activityInfo.packageName);labels.add(entry.getKey().substring(0,entry.getKey().indexOf('\u0000')));}
+        if(packages.isEmpty()){toast("No launchable apps are visible to choose");return;}
+        Set<String> current=new HashSet<>(Arrays.asList(profile.allowedApps.split("[,\\s]+")));boolean[] checked=new boolean[packages.size()];for(int i=0;i<packages.size();i++)checked[i]=current.contains(packages.get(i));
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Choose apps for VPN")
+            .setMultiChoiceItems(labels.toArray(new String[0]),checked,(choice,which,isChecked)->{checked[which]=isChecked;((AlertDialog)choice).getButton(-1).setEnabled(anyAppChecked(checked));})
+            .setPositiveButton("Save",(choice,which)->{ArrayList<String> selectedPackages=new ArrayList<>();for(int i=0;i<checked.length;i++)if(checked[i])selectedPackages.add(packages.get(i));profile.allowedApps=String.join(",",selectedPackages);profile.routeAllApps=false;persist();renderTab("settings");})
+            .setNegativeButton("Cancel",null).create();
+        dialog.setOnShowListener(ignored->dialog.getButton(-1).setEnabled(anyAppChecked(checked)));dialog.show();
+    }
+    boolean anyAppChecked(boolean[] checked){for(boolean value:checked)if(value)return true;return false;}
+    void chooseTheme(){
+        String[] labels={"System default","Light","Dark"};String mode=UiPalette.mode(this);int selected="light".equals(mode)?1:"dark".equals(mode)?2:0;
+        new AlertDialog.Builder(this).setTitle("Appearance").setSingleChoiceItems(labels,selected,(dialog,which)->{UiPalette.setMode(this,new String[]{"system","light","dark"}[which]);dialog.dismiss();recreate();}).setNegativeButton("Cancel",null).show();
+    }
+    void buildToolsTab(){
+        LinearLayout tests=card();tests.addView(text("Network tools",16,TEXT));tests.addView(text("Tests use the active BridgeDNS SOCKS tunnel and report the stage that fails.",11,MUTED));
+        LinearLayout buttons=row();speedTestButton=button("Speed test",palette.accentSoft,palette.accentStrong);webCheckButton=button("Web check",BG,MINT);buttons.addView(speedTestButton,new LinearLayout.LayoutParams(0,dp(46),1));buttons.addView(webCheckButton,new LinearLayout.LayoutParams(0,dp(46),1));tests.addView(buttons);
+        LinearLayout buttons2=row();testButton=button("Test resolvers",BG,MINT);Button dashboard=button("Resolver dashboard",BG,MUTED);buttons2.addView(testButton,new LinearLayout.LayoutParams(0,dp(46),1));buttons2.addView(dashboard,new LinearLayout.LayoutParams(0,dp(46),1));tests.addView(buttons2);
+        speedTestButton.setOnClickListener(v->{if(activeSpeedTest!=null)cancelSpeedTest();else startSpeedTest();});webCheckButton.setOnClickListener(v->testDataPath());testButton.setOnClickListener(v->{if(testing)cancelDnsTest();else testResolvers();});dashboard.setOnClickListener(v->openResolvers());root.addView(tests);
+        LinearLayout manage=card();manage.addView(text("Resolver list",16,TEXT));manage.addView(text("Shared by profiles and kept separate from server configuration.",11,MUTED));
+        resolverListContainer=new LinearLayout(this);resolverListContainer.setOrientation(LinearLayout.VERTICAL);manage.addView(resolverListContainer);
+        LinearLayout actions=row();Button add=button("Add manually",BG,MINT),importFile=button("Import file",BG,MINT),exportFile=button("Export",BG,MUTED);
+        actions.addView(add,new LinearLayout.LayoutParams(0,dp(44),1));actions.addView(importFile,new LinearLayout.LayoutParams(0,dp(44),1));actions.addView(exportFile,new LinearLayout.LayoutParams(0,dp(44),1));manage.addView(actions);
+        add.setOnClickListener(v->addResolversManually());importFile.setOnClickListener(v->openResolverImport());exportFile.setOnClickListener(v->exportResolvers());root.addView(manage);
+        LinearLayout info=card();Button about=button("About BridgeDNS",BG,MUTED),nativeCheck=button("Check native libraries",BG,MINT);info.addView(about);info.addView(nativeCheck);about.setOnClickListener(v->showAbout());nativeCheck.setOnClickListener(v->{try{event(NativeBridge.selfTest());toast("Native library check passed");}catch(Throwable e){event("Native library check failed: "+e);toast("Native library check failed");}});root.addView(info);
+    }
+    void refreshResolverList(){if(resolverListContainer==null)return;resolverListContainer.removeAllViews();List<String> items=ResolverStore.load(this);
+        for(String value:items){LinearLayout line=row();TextView address=text(value,13,TEXT);address.setTypeface(Typeface.MONOSPACE);line.addView(address,new LinearLayout.LayoutParams(0,dp(42),1));Button remove=button("Remove",BG,MUTED);line.addView(remove,new LinearLayout.LayoutParams(dp(88),dp(40)));remove.setOnClickListener(v->{if(!editable())return;ArrayList<String> updated=new ArrayList<>(ResolverStore.load(this));updated.remove(value);if(updated.isEmpty()){toast("At least one resolver must remain");return;}saveResolverList(updated);});resolverListContainer.addView(line);}
+        if(items.isEmpty())resolverListContainer.addView(text("No resolvers configured",12,MUTED));
+    }
+    void addResolversManually(){if(!editable())return;EditText input=new EditText(this);input.setMinLines(2);input.setHint("1.1.1.1 or IP:port, one per line");input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        new AlertDialog.Builder(this).setTitle("Add resolvers").setView(input).setNegativeButton("Cancel",null).setPositiveButton("Add",(d,w)->{try{ArrayList<String> updated=new ArrayList<>(ResolverStore.load(this));updated.addAll(ResolverStore.parse(input.getText().toString()));saveResolverList(updated);}catch(Exception e){toast(e.getMessage());}}).show();}
+    void saveResolverList(List<String> values){try{ResolverStore.save(this,values);applyProfileResolvers();event("Resolver list updated ("+ResolverStore.load(this).size()+")");renderTab("tools");}catch(Exception e){toast(e.getMessage());}}
+    void openResolverImport(){if(!editable())return;try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE),resolverImportRequest);}catch(Exception e){toast("Could not open resolver file picker");}}
+    void exportResolvers(){try{startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("text/plain").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,"BridgeDNS-resolvers.txt"),resolverExportRequest);}catch(Exception e){toast("Could not open resolver export");}}
+    void buildLogTab(){
+        LinearLayout panel=card();LinearLayout heading=row();heading.addView(text("Connection log",16,TEXT),new LinearLayout.LayoutParams(0,-2,1));Button clear=button("Clear",BG,MINT),copyButton=button("Copy",BG,MUTED);heading.addView(clear);heading.addView(copyButton);panel.addView(heading);
+        followLogs=new CheckBox(this);followLogs.setText("Follow new logs");followLogs.setTextColor(MUTED);followLogs.setTextSize(12);followLogs.setButtonTintList(new ColorStateList(new int[][]{new int[]{android.R.attr.state_checked},new int[]{}},new int[]{MINT,MUTED}));followLogs.setChecked(true);panel.addView(followLogs);
+        logScroll=new LogPane();logScroll.setFillViewport(true);logScroll.setVerticalScrollBarEnabled(true);eventsText=text("No events yet",11,MUTED);eventsText.setTypeface(Typeface.MONOSPACE);eventsText.setTextIsSelectable(true);logScroll.addView(eventsText);panel.addView(logScroll,new LinearLayout.LayoutParams(-1,dp(420)));root.addView(panel);
+        clear.setOnClickListener(v->{cancelDnsTest();cancelSpeedTest();events.clear();AppLog.clear(this);renderEvents();});copyButton.setOnClickListener(v->{copy(String.join("\n",events));toast("Log copied");});followLogs.setOnCheckedChangeListener((v,checked)->{if(checked&&logScroll!=null)logScroll.post(()->logScroll.fullScroll(View.FOCUS_DOWN));});
+    }
+    void startSpeedTest(){if(!active){toast("Connect BridgeDNS first");return;}if(activeSpeedTest!=null)return;TunnelSpeedTest test=new TunnelSpeedTest();activeSpeedTest=test;if(speedTestButton!=null)speedTestButton.setText("Stop speed test");
+        speedWorker.execute(()->{try{test.run(line->runOnUiThread(()->event(line)));}catch(Exception e){runOnUiThread(()->event(e.getMessage()==null?"Speed test failed":e.getMessage()));}finally{test.close();if(activeSpeedTest==test)activeSpeedTest=null;runOnUiThread(()->{if(speedTestButton!=null)speedTestButton.setText("Speed test");});}});
+    }
+    void cancelSpeedTest(){TunnelSpeedTest test=activeSpeedTest;if(test!=null){test.close();activeSpeedTest=null;}if(speedTestButton!=null)speedTestButton.setText("Speed test");}
+    void openProfileClipboard(){importProfileClipboard();}
+    void importProfileClipboard(){if(!editable())return;try{ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);ClipData clip=clipboard.getPrimaryClip();if(clip==null)throw new IOException("Clipboard is empty");importProfile(clip.getItemAt(0).coerceToText(this).toString());}catch(Exception e){toast("Could not read profile JSON from clipboard");}}
+    String appVersion(){try{android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);return info.versionName==null?"0.2.0":info.versionName;}catch(Exception ignored){return "0.2.0";}}
+    void showAbout(){new AlertDialog.Builder(this).setTitle("BridgeDNS "+appVersion()).setMessage("Independent Android client for MasterDnsVPN\nProfiles are encrypted with Android Keystore.\nPublic IP checks use api.ipify.org over HTTPS.\nGeneral UDP support depends on the tunnel core.").setPositiveButton("OK",null).show();}
     boolean editable(){if(active||busy){toast("Disconnect before changing settings");return false;}return true;}
     void refresh(){
+        if(currentTab!=null){renderTab(currentTab);return;}
         modeText.setText(profile.vpn?"TCP + DNS across your device":"SOCKS5 • 127.0.0.1:18000");
         segmentState(vpnChoice,profile.vpn,true);segmentState(proxyChoice,!profile.vpn,false);
         segmentState(standardChoice,!profile.multipath,true);segmentState(multiChoice,profile.multipath,false);
@@ -161,9 +370,21 @@ public final class MainActivity extends Activity {
         dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{int n=Integer.parseInt(input.getText().toString().trim());if(n<1||n>64)throw new Exception();profile.scanConcurrency=n;persist();refresh();dialog.dismiss();}catch(Exception e){input.setError("Enter a number from 1 to 64");}}));dialog.show();
     }
     void importProfile(String value){
+        if(currentTab!=null){importProfileModern(value);return;}
         try{Profile imported=Profile.parse(value);imported.validate(false);
             if(imported.encryption!=0&&imported.key.isEmpty()){toast("Enter the server key to finish importing");editProfile(true,imported);}
             else{JSONArray updated=new JSONArray(profiles.toString());updated.put(imported.json());Vault.save(this,updated);profiles=updated;selected=updated.length()-1;profile=imported;getPreferences(0).edit().putInt("selected",selected).apply();refresh();toast("Profile imported");}
+        }catch(Exception e){toast("Invalid profile: "+e.getMessage());}
+    }
+    void importProfileModern(String value){
+        try{
+            JSONObject source=new JSONObject(value);
+            ArrayList<String> mergedResolvers=new ArrayList<>(ResolverStore.load(this));
+            if(source.has("resolvers"))mergedResolvers.addAll(ResolverStore.parse(source.get("resolvers").toString()));
+            Profile imported=Profile.parse(value);imported.resolvers=String.join("\n",mergedResolvers);imported.validate(false);
+            if(source.has("resolvers"))ResolverStore.save(this,mergedResolvers);
+            if(imported.encryption!=0&&imported.key.isEmpty()){toast("Enter the server key to finish importing");editProfile(true,imported);return;}
+            JSONArray updated=new JSONArray(profiles.toString());updated.put(imported.json());Vault.save(this,updated);profiles=updated;selected=updated.length()-1;profile=imported;profile.resolvers=String.join("\n",ResolverStore.load(this));getPreferences(0).edit().putInt("selected",selected).apply();renderTab("profile");toast("Profile imported");
         }catch(Exception e){toast("Invalid profile: "+e.getMessage());}
     }
     void profileActions(View anchor){
@@ -179,7 +400,7 @@ public final class MainActivity extends Activity {
     }
     void deleteProfile(){
         if(!editable())return;if(profiles.length()==0){toast("No saved profile to delete");return;}
-        new AlertDialog.Builder(this).setTitle("Delete profile?").setMessage("Remove “"+profile.name+"” from this device?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(dialog,which)->{
+        new AlertDialog.Builder(this).setTitle("Delete profile?").setMessage("Remove \""+profile.name+"\" from this device?").setNegativeButton("Cancel",null).setPositiveButton("Delete",(dialog,which)->{
             try{JSONArray updated=new JSONArray(profiles.toString());updated.remove(selected);int next=Math.max(0,Math.min(selected,updated.length()-1));
                 Profile replacement=updated.length()==0?new Profile():Profile.parse(updated.getString(next));
                 Vault.save(this,updated);profiles=updated;selected=next;profile=replacement;getPreferences(0).edit().putInt("selected",selected).apply();refresh();toast("Profile deleted");
@@ -191,15 +412,28 @@ public final class MainActivity extends Activity {
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Maximum data paths").setMessage("Use up to this many healthy resolvers. Enter 0 for all healthy paths. More paths do not always mean more speed.").setView(input).setPositiveButton("Save",null).setNegativeButton("Cancel",null).create();
         dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{int n=Integer.parseInt(input.getText().toString().trim());if(n<0)throw new Exception();profile.maxPaths=n;persist();refresh();dialog.dismiss();}catch(Exception e){input.setError("Enter zero or a positive whole number");}}));dialog.show();
     }
+    String connectionSubtitle(){
+        if(!lastError.isEmpty()||status.toLowerCase(Locale.ROOT).contains("fail"))return "Connection failed · see Log for details";
+        if(busy&&!active)return status==null||status.isEmpty()?"Starting secure connection":status;
+        if(active)return profile.vpn?"VPN traffic active":"Proxy traffic active";
+        return profile.domain.isEmpty()?"Add a server profile to get started":"Ready to connect";
+    }
     void toggle(){
         if(active||busy){sendBroadcast(new Intent(TunnelService.STOP).setPackage(getPackageName()));return;}
+        applyProfileResolvers();
         try{profile.validate();}catch(Exception e){toast(e.getMessage());editProfile();return;}
         if(profile.vpn){Intent request=VpnService.prepare(this);if(request!=null){startActivityForResult(request,10);return;}}
         startConnection();
     }
-    void startConnection(){try{lastError="";lastSample=0;lastUp=0;lastDown=0;TunnelService.write(new File(getNoBackupFilesDir(),"pending-profile.json"),profile.json());Intent i=new Intent(this,TunnelService.class);startForegroundService(i);busy=true;updatePowerState();state.setText("Preparing…");}catch(Exception e){toast(e.getMessage());}}
-    void updatePowerState(){orbit.running=active;orbit.working=busy&&!active;orbit.setContentDescription(active||busy?"Disconnect tunnel":"Connect tunnel");orbit.invalidate();}
+    void startConnection(){try{applyProfileResolvers();lastError="";status="Starting secure connection";lastSample=0;lastUp=0;lastDown=0;TunnelService.write(new File(getNoBackupFilesDir(),"pending-profile.json"),profile.json());Intent i=new Intent(this,TunnelService.class);startForegroundService(i);busy=true;updatePowerState();}catch(Exception e){busy=false;updatePowerState();toast(e.getMessage());}}
+    void updatePowerState(){
+        if(state!=null)state.setText(displayStatus());
+        if(statusSubtitle!=null)statusSubtitle.setText(connectionSubtitle());
+        if(orbit==null)return;orbit.running=active;orbit.working=busy&&!active;orbit.setContentDescription(active||busy?"Disconnect tunnel":"Connect tunnel");orbit.invalidate();
+    }
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);
+        if(req==resolverImportRequest){if(result==RESULT_OK&&data!=null&&data.getData()!=null&&editable())try(InputStream input=getContentResolver().openInputStream(data.getData())){if(input==null)throw new IOException();ByteArrayOutputStream bytes=new ByteArrayOutputStream();byte[] buffer=new byte[4096];int n;while((n=input.read(buffer))!=-1)bytes.write(buffer,0,n);ArrayList<String> merged=new ArrayList<>(ResolverStore.load(this));merged.addAll(ResolverStore.parse(bytes.toString("UTF-8")));saveResolverList(merged);toast("Resolvers imported");}catch(Exception e){toast("Invalid resolver file: "+e.getMessage());}return;}
+        if(req==resolverExportRequest){if(result==RESULT_OK&&data!=null&&data.getData()!=null)try(OutputStream output=getContentResolver().openOutputStream(data.getData(),"wt")){if(output==null)throw new IOException();output.write(ResolverStore.exportText(this).getBytes(java.nio.charset.StandardCharsets.UTF_8));toast("Resolvers exported");}catch(Exception e){toast("Could not export resolvers");}return;}
         if(req==21){if(result==RESULT_OK&&data!=null&&data.getData()!=null&&editable())try(InputStream input=getContentResolver().openInputStream(data.getData())){if(input==null)throw new IOException();ByteArrayOutputStream bytes=new ByteArrayOutputStream();byte[] buffer=new byte[4096];int n;while((n=input.read(buffer))!=-1)bytes.write(buffer,0,n);importProfile(bytes.toString("UTF-8"));}catch(Exception e){toast("Could not read profile file");}return;}
         if(req==20){File pending=new File(getNoBackupFilesDir(),"pending-profile-export.json");try{
             if(result==RESULT_OK&&data!=null&&data.getData()!=null){try(InputStream input=new FileInputStream(pending);OutputStream output=getContentResolver().openOutputStream(data.getData(),"wt")){if(output==null)throw new IOException();byte[] b=new byte[4096];int n;while((n=input.read(b))!=-1)output.write(b,0,n);}toast("Profile exported");}
@@ -210,6 +444,7 @@ public final class MainActivity extends Activity {
     void editProfile(){editProfile(false);}
     void editProfile(boolean adding){editProfile(adding,adding?new Profile():profile);}
     void editProfile(boolean adding,Profile seed){
+        if(currentTab!=null){editProfileModern(adding,seed);return;}
         final Profile draft;try{draft=Profile.parse(seed.json());}catch(Exception e){toast("Could not open profile");return;}
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(24),dp(8),dp(24),dp(8));box.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         EditText name=field(box,"Profile name",draft.name,false),domain=field(box,"Delegated tunnel domain",draft.domain,false),key=field(box,"Server key",draft.key,true);
@@ -223,6 +458,16 @@ public final class MainActivity extends Activity {
             Profile p=Profile.parse(draft.json());p.name=name.getText().toString().trim();p.domain=domain.getText().toString().trim();p.key=key.getText().toString();p.resolvers=resolvers.getText().toString().trim();p.encryption=method.getSelectedItemPosition();p.compatibility=compatible.isChecked();p.validate();if(adding)selected=profiles.length();profile=p;persist();refresh();dialog.dismiss();
         }catch(Exception e){toast(e.getMessage());}}));dialog.getWindow();dialog.show();
     }
+    void editProfileModern(boolean adding,Profile seed){
+        if(!editable())return;final Profile draft;try{draft=Profile.parse(seed.json());draft.resolvers=String.join("\n",ResolverStore.load(this));}catch(Exception e){toast("Could not open profile");return;}
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(22),dp(8),dp(22),dp(8));
+        EditText name=field(box,"Profile name",draft.name,false),domain=field(box,"Delegated tunnel domain",draft.domain,false),key=field(box,"Server key",draft.key,true);
+        box.addView(text("Encryption · must match the server",12,MUTED));Spinner encryption=new Spinner(this);encryption.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"0 · None","1 · XOR","2 · ChaCha20","3 · AES-128-GCM","4 · AES-192-GCM","5 · AES-256-GCM"}));encryption.setSelection(Math.max(0,Math.min(5,draft.encryption)));box.addView(encryption);
+        CheckBox compatibility=new CheckBox(this);compatibility.setText("Compatibility mode · Base64 replies, smaller packets");compatibility.setTextColor(TEXT);compatibility.setChecked(draft.compatibility);box.addView(compatibility);
+        box.addView(text("Resolver addresses are managed separately in Tools. Profiles and keys remain encrypted on this device.",11,MUTED));
+        ScrollView scroll=new ScrollView(this);scroll.addView(box);AlertDialog dialog=new AlertDialog.Builder(this).setTitle(adding?"Add profile":"Edit profile").setView(scroll).setPositiveButton("Save",null).setNegativeButton("Cancel",null).create();
+        dialog.setOnShowListener(d->dialog.getButton(-1).setOnClickListener(v->{try{Profile p=Profile.parse(draft.json());p.name=name.getText().toString().trim();p.domain=domain.getText().toString().trim();p.key=key.getText().toString();p.encryption=encryption.getSelectedItemPosition();p.compatibility=compatibility.isChecked();p.resolvers=String.join("\n",ResolverStore.load(this));p.validate();if(adding)selected=profiles.length();profile=p;persist();renderTab("profile");dialog.dismiss();}catch(Exception e){toast(e.getMessage());}}));dialog.show();
+    }
     void selectProfile(){
         String[] names=new String[profiles.length()+1];for(int i=0;i<profiles.length();i++)try{names[i]=Profile.parse(profiles.getString(i)).name;}catch(Exception e){names[i]="Profile";}names[names.length-1]="＋ New profile";
         new AlertDialog.Builder(this).setTitle("Profiles").setItems(names,(d,w)->{try{if(w==profiles.length()){editProfile(true);}else{selected=w;profile=Profile.parse(profiles.getString(w));getPreferences(0).edit().putInt("selected",w).apply();refresh();}}catch(Exception e){toast("Invalid profile");}}).show();
@@ -232,13 +477,14 @@ public final class MainActivity extends Activity {
         if(w==1)try{JSONObject j=new JSONObject(profile.json());j.put("key","");copy(j.toString(2));toast("Settings copied without the key");}catch(Exception ignored){}
         if(w==2&&editable()){EditText f=new EditText(this);f.setText(profile.bypass);f.setHint("com.example.app, com.example.other");new AlertDialog.Builder(this).setTitle("Excluded app package names").setMessage("These apps connect directly. Separate package names with commas. An uninstalled package will prevent VPN startup.").setView(f).setPositiveButton("Save",(a,b)->{String old=profile.bypass;try{profile.bypass=f.getText().toString().trim();profile.validate();persist();}catch(Exception e){profile.bypass=old;toast(e.getMessage());}}).setNegativeButton("Cancel",null).show();}
         if(w==3){copy(String.join("\n",events));toast("Session log copied with the key redacted");}
-        if(w==4)new AlertDialog.Builder(this).setTitle("BridgeDNS 0.1.0").setMessage("Independent Android client for MasterDnsVPN\nCore: masterking32/MasterDnsVPN (MIT)\nTUN: heiher/hev-socks5-tunnel (MIT)\n\nNo ads or telemetry. Profiles are encrypted using Android Keystore.\n\nGeneral UDP is not supported. Real-device and server testing is required.").setPositiveButton("OK",null).show();
+        if(w==4)new AlertDialog.Builder(this).setTitle("BridgeDNS "+appVersion()).setMessage("Independent Android client for MasterDnsVPN\nCore: masterking32/MasterDnsVPN (MIT)\nTUN: heiher/hev-socks5-tunnel (MIT)\n\nNo ads or telemetry. Profiles are encrypted using Android Keystore.\n\nGeneral UDP is not supported. Real-device and server testing is required.").setPositiveButton("OK",null).show();
         if(w==5)try{event(NativeBridge.selfTest());toast("Native library check passed");}catch(Throwable e){event("Native library check failed: "+e.toString());}
         if(w==6)testDataPath();
         if(w==7&&editable())try{startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE),21);}catch(Exception e){toast("Could not open file picker");}
     }).show();}
     void testResolvers(){
         final String list;
+        applyProfileResolvers();
         try{if(!ConfigRules.domain(profile.domain))throw new IllegalArgumentException("Enter a valid tunnel domain");list=ConfigRules.normalizeResolvers(profile.resolvers);}catch(Exception e){toast(e.getMessage());return;}
         final String domain=profile.domain;final int generation=++logGeneration;testing=true;testButton.setText("Stop test");event("DNS response test started. This does not verify the full tunnel.");
         final int parallel=profile.scanConcurrency;
@@ -247,7 +493,7 @@ public final class MainActivity extends Activity {
             try{int total=0;for(String r:list.split("\\r?\\n")){if(Thread.currentThread().isInterrupted())return;if(r.trim().isEmpty())continue;final String resolver=r.trim();results.submit(()->probeResolver(domain,resolver));total++;}
                 for(int checked=0;checked<total;checked++){if(Thread.currentThread().isInterrupted())return;String result=results.take().get();final String line="["+(checked+1)+"/"+total+"] "+result;runOnUiThread(()->{if(generation==logGeneration)event(line);});}
             }catch(InterruptedException e){Thread.currentThread().interrupt();}catch(Exception e){runOnUiThread(()->{if(generation==logGeneration)event("DNS test stopped");});}
-            finally{pool.shutdownNow();runOnUiThread(()->{if(generation==logGeneration){testing=false;testButton.setText("Test DNS");}});}
+            finally{pool.shutdownNow();runOnUiThread(()->{if(generation==logGeneration){testing=false;if(testButton!=null)testButton.setText("Test DNS");}});}
         });
     }
     String probeResolver(String domain,String resolver){
@@ -259,8 +505,8 @@ public final class MainActivity extends Activity {
     void cancelDnsTest(){logGeneration++;if(dnsTask!=null)dnsTask.cancel(true);testing=false;if(testButton!=null)testButton.setText("Test DNS");}
     static byte[] dnsQuestion(String domain) throws Exception {ByteArrayOutputStream bytes=new ByteArrayOutputStream();DataOutputStream d=new DataOutputStream(bytes);d.writeShort(new java.security.SecureRandom().nextInt(65536));d.writeShort(0x100);d.writeShort(1);d.writeShort(0);d.writeShort(0);d.writeShort(0);for(String label:("bridgedns-"+Long.toHexString(System.nanoTime())+"."+domain).split("\\.")){byte[] b=label.getBytes(java.nio.charset.StandardCharsets.US_ASCII);d.writeByte(b.length);d.write(b);}d.writeByte(0);d.writeShort(16);d.writeShort(1);return bytes.toByteArray();}
     void copy(String s){((ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("BridgeDNS",s));}
-    void event(String s){if(profile!=null&&!profile.key.isEmpty())s=s.replace(profile.key,"[key redacted]");if(events.size()>=300)events.removeFirst();events.addLast(new java.text.SimpleDateFormat("HH:mm:ss",Locale.US).format(new Date())+"  "+s);renderEvents();}
-    void renderEvents(){if(eventsText!=null){eventsText.setText(events.isEmpty()?"No events yet":String.join("\n",events));if(followLogs!=null&&followLogs.isChecked())logScroll.post(()->logScroll.fullScroll(View.FOCUS_DOWN));}}
+    void event(String s){if(s==null||s.isEmpty())return;if(profile!=null&&!profile.key.isEmpty())s=s.replace(profile.key,"[key redacted]");AppLog.append(this,s,null);if(events.size()>=300)events.removeFirst();events.addLast(new java.text.SimpleDateFormat("HH:mm:ss",Locale.US).format(new Date())+"  "+s);renderEvents();}
+    void renderEvents(){if(eventsText!=null){eventsText.setText(events.isEmpty()?"No events yet":String.join("\n",events));if(followLogs!=null&&followLogs.isChecked()&&logScroll!=null)logScroll.post(()->logScroll.fullScroll(View.FOCUS_DOWN));}}
     void testDataPath(){
         if(!active){toast("Connect the tunnel first");return;}
         EditText host=new EditText(this);host.setSingleLine(true);host.setText("example.com");host.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -321,18 +567,27 @@ public final class MainActivity extends Activity {
             return handled;
         }
     }
+    final class NavGlyph extends View {
+        final String name;final Paint paint=new Paint(3);final int color;
+        NavGlyph(String name,int color){super(MainActivity.this);this.name=name;this.color=color;}
+        void line(Canvas c,float x1,float y1,float x2,float y2){c.drawLine(x1,y1,x2,y2,paint);}
+        @Override protected void onDraw(Canvas c){super.onDraw(c);float x=getWidth()/2f,y=getHeight()/2f,s=dp(1);paint.setColor(color);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(dp(2));paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);
+            if(name.equals("profile")){c.drawCircle(x,y-dp(5),dp(4),paint);RectF shoulders=new RectF(x-dp(9),y, x+dp(9),y+dp(15));c.drawArc(shoulders,190,160,false,paint);}
+            else if(name.equals("settings")){c.drawCircle(x,y,dp(6),paint);c.drawCircle(x,y,dp(2),paint);for(int i=0;i<8;i++){double a=Math.PI*i/4;line(c,x+(float)Math.cos(a)*dp(7),y+(float)Math.sin(a)*dp(7),x+(float)Math.cos(a)*dp(10),y+(float)Math.sin(a)*dp(10));}}
+            else if(name.equals("connect")){RectF circle=new RectF(x-dp(9),y-dp(9),x+dp(9),y+dp(9));c.drawArc(circle,315,270,false,paint);line(c,x,y-dp(12),x,y+dp(1));}
+            else if(name.equals("tools")){paint.setStrokeWidth(dp(3));line(c,x-dp(8),y+dp(8),x+dp(4),y-dp(4));paint.setStrokeWidth(dp(2));c.drawCircle(x+dp(6),y-dp(7),dp(3),paint);line(c,x+dp(4),y-dp(10),x+dp(9),y-dp(12));line(c,x+dp(8),y-dp(4),x+dp(11),y-dp(8));}
+            else {RectF page=new RectF(x-dp(8),y-dp(11),x+dp(8),y+dp(11));c.drawRoundRect(page,dp(2),dp(2),paint);line(c,x-dp(4),y-dp(4),x+dp(4),y-dp(4));line(c,x-dp(4),y,x+dp(4),y);line(c,x-dp(4),y+dp(4),x+dp(3),y+dp(4));}
+        }
+    }
     final class Orbit extends View {
         final Paint p=new Paint(3);boolean running,working;Orbit(){super(MainActivity.this);setContentDescription("Connect tunnel");setFocusable(true);setClickable(true);}
         @Override public CharSequence getAccessibilityClassName(){return Button.class.getName();}
         @Override protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
-        @Override protected void onDraw(Canvas c){super.onDraw(c);float x=getWidth()/2f,y=getHeight()/2f,r=dp(76);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(1));p.setColor(LINE);c.drawCircle(x,y,r+dp(23),p);c.drawCircle(x,y,r+dp(9),p);
-            p.setColor(running?0xff185a50:0xff1c3343);p.setStyle(Paint.Style.FILL);c.drawCircle(x,y,r,p);p.setShader(new RadialGradient(x,y,r,new int[]{running?0xff19483f:0xff153344,0xff0c1925},null,Shader.TileMode.CLAMP));c.drawCircle(x,y,r-dp(2),p);p.setShader(null);
-            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(3));p.setStrokeCap(Paint.Cap.ROUND);p.setColor(MINT);
-            float angle=working?(SystemClock.uptimeMillis()%3000)*.12f:-90;c.drawArc(x-r-dp(9),y-r-dp(9),x+r+dp(9),y+r+dp(9),angle,running?350:working?100:42,false,p);
-            p.setStrokeWidth(dp(5));c.drawLine(x-dp(22),y+dp(22),x-dp(22),y-dp(22),p);c.drawLine(x-dp(22),y-dp(22),x+dp(22),y+dp(22),p);c.drawLine(x+dp(22),y+dp(22),x+dp(22),y-dp(22),p);
-            p.setStyle(Paint.Style.FILL);
-            p.setTextAlign(Paint.Align.CENTER);p.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));p.setTextSize(dp(11));p.setColor(isPressed()?TEXT:MINT);c.drawText(working?"TAP TO STOP":running?"DISCONNECT":"CONNECT",x,y+dp(51),p);
-            if(working)postInvalidateDelayed(32);
+        @Override protected void onDraw(Canvas c){super.onDraw(c);float x=getWidth()/2f,y=getHeight()/2f,r=dp(74);p.setShader(null);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(2));p.setStrokeCap(Paint.Cap.ROUND);p.setColor(working?MINT:running?palette.accent:palette.line);c.drawCircle(x,y,r+dp(12),p);
+            int fill=running?palette.accentStrong:working?palette.accent:palette.accentSoft;int glyph=running?0xffffffff:working?0xffffffff:palette.accentStrong;
+            p.setStyle(Paint.Style.FILL);p.setColor(fill);c.drawCircle(x,y,r,p);p.setShader(new RadialGradient(x-dp(18),y-dp(20),r,new int[]{fill,running?palette.accentStrong:palette.accentSoft},null,Shader.TileMode.CLAMP));c.drawCircle(x,y,r-dp(1),p);p.setShader(null);
+            if(working){p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(3));p.setColor(MINT);float angle=(SystemClock.uptimeMillis()%2400)*.15f;c.drawArc(x-r-dp(12),y-r-dp(12),x+r+dp(12),y+r+dp(12),angle,88,false,p);postInvalidateDelayed(32);}
+            p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(dp(5));p.setStrokeCap(Paint.Cap.ROUND);p.setColor(glyph);RectF power=new RectF(x-dp(27),y-dp(25),x+dp(27),y+dp(29));c.drawArc(power,315,270,false,p);c.drawLine(x,y-dp(35),x,y+dp(1),p);
         }
     }
 }
