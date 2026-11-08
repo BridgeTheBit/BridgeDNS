@@ -48,7 +48,7 @@ final class DataProbe {
                 tls.setSoTimeout(20000);SSLParameters params=tls.getSSLParameters();params.setEndpointIdentificationAlgorithm("HTTPS");tls.setSSLParameters(params);
                 tls.startHandshake();log.accept("[probe] TLS handshake and hostname verification passed");
                 stage="HTTP request / response";
-                byte[] request=("GET / HTTP/1.1\r\nHost: "+host+"\r\nUser-Agent: BridgeDNS/0.1.0\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII);
+                byte[] request=("GET / HTTP/1.1\r\nHost: "+host+"\r\nUser-Agent: BridgeDNS/"+BuildConfig.VERSION_NAME+"\r\nConnection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII);
                 tls.getOutputStream().write(request);tls.getOutputStream().flush();
                 ByteArrayOutputStream response=new ByteArrayOutputStream();int matched=0;
                 while(response.size()<16384){int b=tls.getInputStream().read();if(b<0)break;response.write(b);int expected=(matched==0||matched==2)?13:10;if(b==expected)matched++;else matched=b==13?1:0;if(matched==4)break;}

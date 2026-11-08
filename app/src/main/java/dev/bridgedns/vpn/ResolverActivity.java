@@ -15,7 +15,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public final class ResolverActivity extends Activity {
-    final int BG=0xff09121d,CARD=0xff121f2d,TEXT=0xffecf4f8,MUTED=0xff93a9bb,MINT=0xff53e5c2;
+    int BG,CARD,TEXT,MUTED,MINT;UiPalette palette;
     final Handler handler=new Handler(Looper.getMainLooper());
     final ExecutorService worker=Executors.newSingleThreadExecutor();
     final ArrayList<Row> rows=new ArrayList<>(),shown=new ArrayList<>();
@@ -28,9 +28,9 @@ public final class ResolverActivity extends Activity {
     }};
     final Runnable poll=new Runnable(){public void run(){sendBroadcast(new Intent(TunnelService.QUERY).setPackage(getPackageName()));sendBroadcast(new Intent(TunnelService.RESOLVERS_QUERY).setPackage(getPackageName()));updateSummary();handler.postDelayed(this,2000);}};
     @Override protected void attachBaseContext(Context base){android.content.res.Configuration configuration=new android.content.res.Configuration(base.getResources().getConfiguration());configuration.setLocale(Locale.ENGLISH);configuration.setLayoutDirection(Locale.ENGLISH);super.attachBaseContext(base.createConfigurationContext(configuration));}
-    @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
+    @Override public void onCreate(Bundle state){UiPalette.apply(this);super.onCreate(state);palette=UiPalette.from(this);BG=palette.background;CARD=palette.card;TEXT=palette.text;MUTED=palette.muted;MINT=palette.accent;getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(20),dp(16),dp(20),dp(8));root.setBackgroundColor(BG);root.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);setContentView(root);root.setOnApplyWindowInsetsListener((v,insets)->{root.setPadding(dp(20),dp(16)+insets.getSystemWindowInsetTop(),dp(20),dp(8)+insets.getSystemWindowInsetBottom());return insets.consumeSystemWindowInsets();});
-        LinearLayout title=row();Button back=button("‹ Back");title.addView(back,new LinearLayout.LayoutParams(dp(85),dp(48)));back.setOnClickListener(v->finish());title.addView(text("Resolvers",23,TEXT),new LinearLayout.LayoutParams(0,-2,1));root.addView(title);
+        LinearLayout title=row();Button back=button("‹ Back");title.addView(back,new LinearLayout.LayoutParams(dp(85),dp(48)));back.setOnClickListener(v->finish());title.addView(text("Resolver dashboard",21,TEXT),new LinearLayout.LayoutParams(0,-2,1));root.addView(title);
         summary=text("Connect to collect live measurements",12,MUTED);root.addView(summary);
         LinearLayout test=new LinearLayout(this);test.setOrientation(LinearLayout.VERTICAL);test.setPadding(dp(12),dp(10),dp(12),dp(10));test.setBackground(background(CARD));
         test.addView(text("Tunnel speed & web check",16,TEXT));

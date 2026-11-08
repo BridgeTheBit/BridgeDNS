@@ -96,7 +96,7 @@ gradle testDebugUnitTest lintDebug assembleDebug
 
 ```bash
 bash scripts/build-sdk.sh
-# app/build/sdk/BridgeDNS-universal-v0.1.0.apk
+# app/build/sdk/BridgeDNS-universal-v0.2.0.apk
 ```
 
 APK تحویلی از مسیر مستقیم SDK ساخته شده است. سه ABI `arm64-v8a`، `armeabi-v7a` و `x86_64` را دارد. کتابخانه‌های آماده در بستهٔ سورس قرار دارند؛ برای بازسازی آن‌ها اسکریپت بالا کدهای بالادستی پین‌شده را می‌گیرد.
