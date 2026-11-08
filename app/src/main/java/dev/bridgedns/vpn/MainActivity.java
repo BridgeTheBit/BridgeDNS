@@ -224,7 +224,7 @@ public final class MainActivity extends Activity {
         LinearLayout first=row();time=valueColumn(first,"Duration","00:00:00");pingText=valueColumn(first,"Ping","—");
         LinearLayout.LayoutParams firstParams=new LinearLayout.LayoutParams(-1,-2);firstParams.topMargin=dp(8);hero.addView(first,firstParams);
         View divider=new View(this);divider.setBackgroundColor(LINE);LinearLayout.LayoutParams dividerParams=new LinearLayout.LayoutParams(-1,dp(1));dividerParams.topMargin=dp(8);dividerParams.bottomMargin=dp(8);hero.addView(divider,dividerParams);
-        LinearLayout second=row();resolverCounter=valueColumn(second,"Resolvers","— / —");resolverCounter.setOnClickListener(v->openResolvers());publicIpText=valueColumn(second,"Public IP",lastPublicIp);publicIpText.setOnClickListener(v->probePublicIp(active));hero.addView(second);
+        LinearLayout second=row();resolverCounter=valueColumn(second,"Resolvers","— / —");resolverCounter.setOnClickListener(v->openResolvers());publicIpText=valueColumn(second,"Public IP",lastPublicIp);publicIpText.setOnClickListener(v->probePublicIp(active));publicIpText.setOnLongClickListener(v->{if(!"Unavailable".equals(lastPublicIp)&&!"—".equals(lastPublicIp)){copy(lastPublicIp);toast("Public IP copied");}return true;});hero.addView(second);
         root.addView(hero);
         LinearLayout traffic=row();LinearLayout.LayoutParams downParams=new LinearLayout.LayoutParams(0,dp(132),1);downParams.rightMargin=dp(7);
         LinearLayout.LayoutParams upParams=new LinearLayout.LayoutParams(0,dp(132),1);upParams.leftMargin=dp(7);
@@ -236,7 +236,7 @@ public final class MainActivity extends Activity {
     }
     TextView valueColumn(LinearLayout row,String label,String value){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(3),dp(3),dp(3),dp(3));
-        TextView title=text(label,11,MUTED);TextView v=text(value,16,TEXT);v.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));v.setFontFeatureSettings("tnum");v.setSingleLine(true);v.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        TextView title=text(label,11,MUTED);TextView v=text(value,16,TEXT);v.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));v.setFontFeatureSettings("tnum");v.setSingleLine(true);v.setEllipsize(android.text.TextUtils.TruncateAt.END);v.setAutoSizeTextTypeUniformWithConfiguration(10,16,1,android.util.TypedValue.COMPLEX_UNIT_SP);
         box.addView(title);box.addView(v,new LinearLayout.LayoutParams(-1,dp(28)));row.addView(box,new LinearLayout.LayoutParams(0,-2,1));return v;
     }
     View trafficCard(boolean upload){
