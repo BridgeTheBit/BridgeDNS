@@ -91,7 +91,7 @@ public final class TunnelService extends VpnService {
         if(!ready) throw new IOException("Proxy startup timed out. Check the domain, key, encryption and resolvers.");
         if(profile.vpn){
             Builder b=new Builder().setSession("BridgeDNS").setMtu(1280).addAddress("198.18.0.1",30)
-                .addAddress("fd00:6e61:7661::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("198.18.0.2");
+                .addAddress("fd00:6e61:7661::1",126).addRoute("0.0.0.0",0).addRoute("::",0).addDnsServer("1.1.1.1");
             if(profile.routeAllApps) {
                 b.addDisallowedApplication(getPackageName());
                 for(String pkg:profile.bypass.split("[,\\s]+")) if(!pkg.isEmpty() && !pkg.equals(getPackageName())) {
@@ -108,9 +108,7 @@ public final class TunnelService extends VpnService {
             }
             if(stopping.get()) return;
             tun=b.establish(); if(tun==null) throw new IOException("VPN permission was revoked");
-            // MapDNS answers device DNS locally and forwards TCP using the original hostname.
-            // The resolver list still carries the MasterDnsVPN transport itself.
-            File yaml=new File(dir,"tun.yml"); write(yaml,"tunnel:\n  mtu: 1280\n  ipv4: 198.18.0.1\n  ipv6: 'fd00:6e61:7661::1'\nsocks5:\n  address: 127.0.0.1\n  port: 18000\n  udp: 'udp'\nmapdns:\n  address: 198.18.0.2\n  port: 53\n  network: 100.64.0.0\n  netmask: 255.192.0.0\n  cache-size: 10000\nmisc:\n  log-level: error\n");
+            File yaml=new File(dir,"tun.yml"); write(yaml,"tunnel:\n  mtu: 1280\n  ipv4: 198.18.0.1\n  ipv6: 'fd00:6e61:7661::1'\nsocks5:\n  address: 127.0.0.1\n  port: 18000\n  udp: 'udp'\nmisc:\n  log-level: error\n");
             final int fd=tun.getFd();
             tunThread=new Thread(()->{int code=NativeBridge.runTun(yaml.getPath(),fd); if(!stopping.get()) fail(new IOException("TUN adapter stopped: "+code));},"tun2socks"); tunThread.start();
         }

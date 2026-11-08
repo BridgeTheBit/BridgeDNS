@@ -1,4 +1,4 @@
-BridgeDNS 0.2.1 — Third-party notices
+BridgeDNS 0.2.2 — Third-party notices
 
 MIT License
 
