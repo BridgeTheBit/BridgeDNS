@@ -455,7 +455,7 @@ public final class MainActivity extends Activity {
     void cancelSpeedTest(){TunnelSpeedTest test=activeSpeedTest;if(test!=null){test.close();activeSpeedTest=null;}if(speedTestButton!=null)speedTestButton.setText("Speed test");}
     void openProfileClipboard(){importProfileClipboard();}
     void importProfileClipboard(){if(!editable())return;try{ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);ClipData clip=clipboard.getPrimaryClip();if(clip==null)throw new IOException("Clipboard is empty");importProfile(clip.getItemAt(0).coerceToText(this).toString());}catch(Exception e){toast("Could not read profile JSON from clipboard");}}
-    String appVersion(){try{android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);return info.versionName==null?"0.2.2":info.versionName;}catch(Exception ignored){return "0.2.2";}}
+    String appVersion(){try{android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);return info.versionName==null?"0.2.3":info.versionName;}catch(Exception ignored){return "0.2.3";}}
     void showAbout(){new AlertDialog.Builder(this).setTitle("BridgeDNS "+appVersion()).setMessage("Independent Android client for MasterDnsVPN\nProfiles are encrypted with Android Keystore.\nPublic IP checks use api.ipify.org over HTTPS.\nGeneral UDP support depends on the tunnel core.").setPositiveButton("OK",null).show();}
     boolean editable(){if(active||busy){toast("Disconnect before changing settings");return false;}return true;}
     void refresh(){

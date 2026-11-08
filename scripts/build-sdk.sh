@@ -11,9 +11,9 @@ KEYSTORE="${NAVA_SIGNING_KEYSTORE:-$ROOT/signing/development.keystore}"
 KEY_ALIAS="${NAVA_KEY_ALIAS:-androiddebugkey}"
 KEYSTORE_PASSWORD="${NAVA_KEYSTORE_PASSWORD:-android}"
 KEY_PASSWORD="${NAVA_KEY_PASSWORD:-android}"
-OUTPUT_NAME="${NAVA_OUTPUT_NAME:-BridgeDNS-universal-v0.2.2-debug.apk}"
-VERSION_CODE="${NAVA_VERSION_CODE:-4}"
-VERSION_NAME="${NAVA_VERSION_NAME:-0.2.2}"
+OUTPUT_NAME="${NAVA_OUTPUT_NAME:-BridgeDNS-universal-v0.2.3-debug.apk}"
+VERSION_CODE="${NAVA_VERSION_CODE:-5}"
+VERSION_NAME="${NAVA_VERSION_NAME:-0.2.3}"
 if [[ "$KEYSTORE" == "$ROOT/signing/development.keystore" ]]; then mkdir -p "$ROOT/signing"; fi
 OUT="$ROOT/app/build/sdk"; mkdir -p "$OUT/classes" "$OUT/gen" "$OUT/dex"
 for abi in $ABIS; do
