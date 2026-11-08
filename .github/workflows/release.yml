@@ -3,13 +3,13 @@ name: Build and release BridgeDNS
 on:
   push:
     branches:
-      - codex/redesign-android-tabs
+      - codex/icon-release-v0.2.3
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag matching app/build.gradle, for example v0.2.2
+        description: Release tag matching app/build.gradle, for example v0.2.3
         required: true
 
 permissions:
