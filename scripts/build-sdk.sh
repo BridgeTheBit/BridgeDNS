@@ -12,6 +12,8 @@ KEY_ALIAS="${NAVA_KEY_ALIAS:-androiddebugkey}"
 KEYSTORE_PASSWORD="${NAVA_KEYSTORE_PASSWORD:-android}"
 KEY_PASSWORD="${NAVA_KEY_PASSWORD:-android}"
 OUTPUT_NAME="${NAVA_OUTPUT_NAME:-BridgeDNS-universal-v0.1.0-debug.apk}"
+VERSION_CODE="${NAVA_VERSION_CODE:-1}"
+VERSION_NAME="${NAVA_VERSION_NAME:-0.1.0}"
 if [[ "$KEYSTORE" == "$ROOT/signing/development.keystore" ]]; then mkdir -p "$ROOT/signing"; fi
 OUT="$ROOT/app/build/sdk"; mkdir -p "$OUT/classes" "$OUT/gen" "$OUT/dex"
 for abi in $ABIS; do
@@ -19,11 +21,11 @@ for abi in $ABIS; do
 done
 python3 "$ROOT/scripts/verify-native.py" $ABIS
 "$SDK/aapt2" compile --dir "$ROOT/app/src/main/res" -o "$OUT/resources.zip"
-python3 - "$ROOT/app/src/main/AndroidManifest.xml" "$OUT/AndroidManifest.xml" <<'PY'
-import sys,xml.etree.ElementTree as ET
+NAVA_VERSION_CODE="$VERSION_CODE" NAVA_VERSION_NAME="$VERSION_NAME" python3 - "$ROOT/app/src/main/AndroidManifest.xml" "$OUT/AndroidManifest.xml" <<'PY'
+import os,sys,xml.etree.ElementTree as ET
 ET.register_namespace('android','http://schemas.android.com/apk/res/android')
 t=ET.parse(sys.argv[1]); r=t.getroot(); r.set('package','dev.bridgedns.vpn')
-r.set('{http://schemas.android.com/apk/res/android}versionCode','1');r.set('{http://schemas.android.com/apk/res/android}versionName','0.1.0')
+r.set('{http://schemas.android.com/apk/res/android}versionCode',os.environ['NAVA_VERSION_CODE']);r.set('{http://schemas.android.com/apk/res/android}versionName',os.environ['NAVA_VERSION_NAME'])
 t.write(sys.argv[2],encoding='utf-8',xml_declaration=True)
 PY
 "$SDK/aapt2" link -o "$OUT/base.apk" -I "$JAR" -A "$ROOT/app/src/main/assets" --manifest "$OUT/AndroidManifest.xml" --java "$OUT/gen" --min-sdk-version 26 --target-sdk-version 35 "$OUT/resources.zip"

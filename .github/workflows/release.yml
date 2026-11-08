@@ -67,10 +67,12 @@ jobs:
         id: version
         shell: bash
         run: |
-          version="$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" app/build.gradle)"
-          test -n "$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
+          version_code="$(sed -n "s/.*versionCode \([0-9][0-9]*\).*/\1/p" app/build.gradle | head -n1)"
+          version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
+          test -n "$version_code"
+          test -n "$version_name"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
       - name: Build native libraries
         env:
           ABIS: ${{ matrix.abis }}
@@ -89,18 +91,20 @@ jobs:
       - name: Build signed APK
         env:
           NAVA_ABI: ${{ matrix.abis }}
-          NAVA_OUTPUT_NAME: BridgeDNS-${{ matrix.target }}-v${{ steps.version.outputs.version }}.apk
+          NAVA_OUTPUT_NAME: BridgeDNS-${{ matrix.target }}-v${{ steps.version.outputs.version_name }}.apk
           NAVA_SIGNING_KEYSTORE: ${{ runner.temp }}/bridgedns-release.keystore
           NAVA_KEY_ALIAS: ${{ secrets.NAVA_KEY_ALIAS }}
           NAVA_KEYSTORE_PASSWORD: ${{ secrets.NAVA_KEYSTORE_PASSWORD }}
           NAVA_KEY_PASSWORD: ${{ secrets.NAVA_KEY_PASSWORD }}
+          NAVA_VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          NAVA_VERSION_NAME: ${{ steps.version.outputs.version_name }}
         run: bash scripts/build-sdk.sh
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BridgeDNS-${{ matrix.target }}-v${{ steps.version.outputs.version }}
-          path: app/build/sdk/BridgeDNS-${{ matrix.target }}-v${{ steps.version.outputs.version }}.apk
+          name: BridgeDNS-${{ matrix.target }}-v${{ steps.version.outputs.version_name }}
+          path: app/build/sdk/BridgeDNS-${{ matrix.target }}-v${{ steps.version.outputs.version_name }}.apk
           if-no-files-found: error
 
   release:
@@ -115,21 +119,34 @@ jobs:
         id: version
         shell: bash
         run: |
-          version="$(sed -n "s/.*versionName '\([^']*\)'.*/\1/p" app/build.gradle)"
-          test -n "$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
+          version_code="$(sed -n "s/.*versionCode \([0-9][0-9]*\).*/\1/p" app/build.gradle | head -n1)"
+          version_name="$(sed -n "s/.*versionName '\([^']*\).*/\1/p" app/build.gradle | head -n1)"
+          test -n "$version_code"
+          test -n "$version_name"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
       - name: Download APKs
         uses: actions/download-artifact@v4
         with:
           path: release-assets
-          pattern: BridgeDNS-*-v${{ steps.version.outputs.version }}
+          pattern: BridgeDNS-*-v${{ steps.version.outputs.version_name }}
           merge-multiple: true
+
+      - name: Verify release APKs
+        env:
+          VERSION: ${{ steps.version.outputs.version_name }}
+        shell: bash
+        run: |
+          for target in arm64-v8a armeabi-v7a x86_64 universal; do
+            asset="release-assets/BridgeDNS-${target}-v${VERSION}.apk"
+            test -s "$asset"
+          done
+          test "$(find release-assets -maxdepth 1 -type f -name 'BridgeDNS-*.apk' | wc -l)" -eq 4
 
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version_name }}
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           tag="${GITHUB_REF_NAME}"
